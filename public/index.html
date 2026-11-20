@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TV-Simulator 1977</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+        cursor: none;
+        user-select: none;
+      }
+      #screen {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      /* Notbetrieb ohne Grafikbeschleunigung: Video direkt anzeigen */
+      #plain {
+        position: fixed;
+        inset: 0;
+        display: none;
+        background: #000;
+      }
+      body.plain #plain {
+        display: block;
+      }
+      body.plain #screen {
+        display: none;
+      }
+      #plain > * {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: none;
+      }
+      #plain > .shown {
+        display: block;
+      }
+      #info {
+        position: fixed;
+        left: 16px;
+        top: 16px;
+        max-width: calc(100% - 64px);
+        padding: 12px 16px;
+        font: 14px/1.5 ui-monospace, Consolas, 'DejaVu Sans Mono', monospace;
+        color: #f4e9c8;
+        background: rgba(20, 14, 8, 0.86);
+        border: 1px solid #a8743a;
+        border-radius: 6px;
+        white-space: pre;
+        display: none;
+        z-index: 5;
+      }
+      #info.shown {
+        display: block;
+      }
+      #hint {
+        position: fixed;
+        left: 50%;
+        bottom: 24px;
+        transform: translateX(-50%);
+        padding: 8px 16px;
+        font: 15px/1.4 system-ui, sans-serif;
+        color: #f4e9c8;
+        background: rgba(20, 14, 8, 0.86);
+        border-radius: 6px;
+        display: none;
+        z-index: 5;
+      }
+      #hint.shown {
+        display: block;
+      }
+      #settings {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: min(460px, 100%);
+        display: none;
+        flex-direction: column;
+        background: #1b140d;
+        border-left: 1px solid #a8743a;
+        z-index: 10;
+        cursor: auto;
+      }
+      #settings.shown {
+        display: flex;
+      }
+      #settings button {
+        font: 14px system-ui, sans-serif;
+        padding: 8px;
+        border: 0;
+        color: #f4e9c8;
+        background: #6b3f17;
+        cursor: pointer;
+      }
+      #settings iframe {
+        flex: 1;
+        width: 100%;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="screen"></canvas>
+    <div id="plain"></div>
+    <div id="info"></div>
+    <div id="hint"></div>
+    <div id="settings">
+      <button id="settings-close" type="button">Einstellungen schließen (F2)</button>
+    </div>
+    <script type="module" src="js/main.js"></script>
+  </body>
+</html>

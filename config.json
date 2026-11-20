@@ -1,0 +1,35 @@
+{
+  // Einstellungen des TV-Simulators.
+  // Hier stehen nur die wichtigsten Werte; alle weiteren (mit ihren Standardwerten)
+  // finden sich in server/defaults.js und können genauso eingetragen werden.
+  // Was in der Fernbedienung verstellt wird, hat Vorrang vor dieser Datei
+  // ("Alle Einstellungen zurücksetzen" in der Fernbedienung hebt das wieder auf).
+
+  "server": {
+    "port": 7777,
+    // "127.0.0.1" = Fernbedienung nur an diesem Rechner.
+    // "0.0.0.0"   = Fernbedienung auch vom Handy/Laptop im selben Netzwerk – dann unbedingt einen PIN setzen.
+    "host": "127.0.0.1",
+    "pin": ""
+  },
+
+  // "last" = nach dem Start der zuletzt eingestellte Sender, oder eine feste Sendernummer (1, 2, ...)
+  "startChannel": "last",
+
+  "testcard": {
+    "title": "DREIEICH",
+    "subtitle": "TESTBILD"
+  },
+
+  "audio": {
+    "volume": 0.8
+  },
+
+  // Uhrzeiten als "HH:MM", leer = aus
+  "schedule": {
+    "powerOn": "",
+    "powerOff": "",
+    "restartAll": "",
+    "reload": "04:30"
+  }
+}

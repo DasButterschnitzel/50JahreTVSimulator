@@ -1,0 +1,248 @@
+#!/usr/bin/env node
+// Funktionstest im echten Browser (Chromium über Playwright).
+// Erzeugt Testfilme mit ffmpeg, startet den Server und spielt die wichtigsten
+// Bedienschritte durch.   Aufruf: npm run test:e2e
+//
+// Voraussetzungen: ffmpeg und das npm-Paket "playwright" (npm i -D playwright).
+
+import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createApp } from '../server.js';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const require = createRequire(import.meta.url);
+let chromium;
+try {
+  ({ chromium } = require('playwright'));
+} catch {
+  console.error('Das Paket "playwright" fehlt:  npm i -D playwright && npx playwright install chromium');
+  process.exit(2);
+}
+
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tv77-e2e-'));
+const media = path.join(dir, 'media');
+const shots = process.env.TV_SHOTS ? path.resolve(process.env.TV_SHOTS) : null;
+if (shots) fs.mkdirSync(shots, { recursive: true });
+
+console.log('Erzeuge Testfilme …');
+const demo = spawnSync(process.execPath, [path.join(ROOT, 'tools/make-demo.mjs'), '--webm', '--out', media, '--seconds', '12'], { stdio: 'inherit' });
+if (demo.status !== 0) process.exit(2);
+fs.mkdirSync(path.join(media, '06-kaputt'));
+fs.writeFileSync(path.join(media, '06-kaputt', 'defekt.mp4'), 'das ist kein Film');
+fs.writeFileSync(path.join(media, '01-demo-farbe', '03-defekt.webm'), 'auch kein Film');
+
+const quiet = { info() {}, warn: (m) => console.log('   [server]', m), error: (m) => console.log('   [server]', m) };
+const app = createApp({ config: path.join(dir, 'config.json'), data: path.join(dir, 'data'), media, log: quiet });
+await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+const base = `http://127.0.0.1:${app.server.address().port}`;
+
+const browser = await chromium.launch({
+  args: ['--autoplay-policy=no-user-gesture-required', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+});
+const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+const pageErrors = [];
+page.on('pageerror', (e) => pageErrors.push(e.message));
+
+let failed = 0;
+function check(name, ok, detail = '') {
+  console.log(`${ok ? '  ok  ' : 'FEHLER'} ${name}${detail ? `  (${detail})` : ''}`);
+  if (!ok) failed++;
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const state = () =>
+  page.evaluate(() => {
+    const p = window.tv.player;
+    const v = p.active;
+    return {
+      ...p.status(),
+      playing: p.itemIndex,
+      videoTime: v.currentTime,
+      videoPaused: v.paused,
+      activeIdx: p.activeIdx,
+      source: window.tv.renderer.source?.kind ?? null,
+      options: window.tv.renderer.sourceOptions,
+      rendererOk: window.tv.renderer.ok,
+      audio: window.tv.audio.ctx?.state,
+      directorMode: window.tv.director.mode,
+      directorPower: window.tv.director.power,
+      gain: window.tv.director.dyn.gain,
+    };
+  });
+const waitFor = async (fn, timeout = 10000) => {
+  const end = Date.now() + timeout;
+  for (;;) {
+    const s = await state();
+    if (fn(s)) return s;
+    if (Date.now() > end) return s;
+    await sleep(100);
+  }
+};
+const settled = (s) => !s.switching && s.directorMode === 'idle';
+const command = (cmd, args = {}) => fetch(`${base}/api/command`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cmd, args }) });
+const shot = async (name) => shots && page.screenshot({ path: path.join(shots, `${name}.png`) });
+
+try {
+  await page.goto(base);
+  await page.waitForFunction(() => window.tv?.player?.channels.length > 0, null, { timeout: 30000 });
+  await page.keyboard.press('1');
+  // (Am Filmende spielt das Bild den Film noch aus, während die Sendeuhr schon beim nächsten ist – diesen Moment abwarten.)
+  let s = await waitFor((x) => settled(x) && x.channelIndex === 0 && x.videoTime > 0 && !x.videoPaused && x.item.index === x.playing);
+
+  check('Röhrensimulation läuft (WebGL)', s.rendererOk);
+  check('Sender eingelesen', s.channels.length === 6, s.channels.map((c) => c.name).join(', '));
+  check('defekte Datei wird im Sendeplan übersprungen', s.channels[0].films === 2 && s.channels[0].missing === 1);
+  check('Film läuft mit Ton', s.item && !s.videoPaused && s.audio === 'running' && !s.needsGesture);
+  check('Bild folgt der Sendeuhr', Math.abs(s.videoTime - s.item.offset) < 1, `Abweichung ${(s.videoTime - s.item.offset).toFixed(2)} s`);
+  await shot('1-farbe');
+
+  // Gleichzeitig laufende Sender
+  const before = s.item.position;
+  const t0 = Date.now();
+  await page.keyboard.press('ArrowUp');
+  s = await waitFor((x) => settled(x) && x.channelIndex === 1 && x.videoTime > 0);
+  check('Umschalten mit Pfeiltaste', s.channelIndex === 1 && s.source === 'video');
+  check('Schwarz-Weiß-Option des Senders greift', s.options?.blackWhite === true);
+  await shot('2-schwarzweiss');
+  await sleep(2500);
+  await page.keyboard.press('ArrowDown');
+  s = await waitFor((x) => settled(x) && x.channelIndex === 0 && x.videoTime > 0);
+  const elapsed = (Date.now() - t0) / 1000;
+  const expected = (before + elapsed) % s.item.total;
+  const diff = Math.min(Math.abs(s.item.position - expected), s.item.total - Math.abs(s.item.position - expected));
+  check('Sender 1 lief im Hintergrund weiter', diff < 0.8, `erwartet ${expected.toFixed(1)} s, ist ${s.item.position.toFixed(1)} s`);
+  check('Farbe ist nach dem Zurückschalten wieder da', s.options?.blackWhite === false);
+
+  // Pause
+  await page.keyboard.press(' ');
+  s = await waitFor((x) => x.paused && x.videoPaused);
+  const pausedAt = s.item.position;
+  await sleep(1500);
+  s = await state();
+  check('Pause hält Bild und Sendeuhr an', s.paused && s.videoPaused && Math.abs(s.item.position - pausedAt) < 0.05);
+  await page.keyboard.press(' ');
+  s = await waitFor((x) => !x.paused && !x.videoPaused);
+  await sleep(1000);
+  s = await state();
+  // (das Programm kann in der Zwischenzeit von vorn begonnen haben, deshalb im Kreis gerechnet)
+  const sincePause = (((s.item.position - pausedAt) % s.item.total) + s.item.total) % s.item.total;
+  check('Weiter nach Pause an derselben Stelle', !s.paused && sincePause > 0 && sincePause < 2.5, `${sincePause.toFixed(2)} s`);
+
+  // Neustart des Films und nahtloser Übergang zum nächsten
+  await page.keyboard.press('r');
+  await sleep(700);
+  s = await state();
+  check('Film neu starten', s.item.offset < 1.5 && s.videoTime < 1.5, `Sendeuhr ${s.item.offset.toFixed(2)} s, Bild ${s.videoTime.toFixed(2)} s, Film ${s.item.index + 1}/${s.playing + 1}`);
+  const firstIndex = s.item.index;
+  const firstActive = s.activeIdx;
+  await command('seek', { seconds: s.item.duration - s.item.offset - 4 });
+  await sleep(1500);
+  s = await state();
+  check('Springen (Fernbedienung)', s.item.index === firstIndex && s.item.duration - s.item.offset < 3.5, `Rest ${(s.item.duration - s.item.offset).toFixed(1)} s`);
+  s = await waitFor((x) => x.playing !== firstIndex && x.item.index === x.playing && x.videoTime > 0.3 && !x.videoPaused, 9000);
+  check('nahtloser Wechsel zum nächsten Film', s.item.index === (firstIndex + 1) % 2 && s.activeIdx !== firstActive && !s.fault, `Film ${s.item.index + 1}, ${s.videoTime.toFixed(2)} s`);
+  check('Sendeuhr passt nach dem Filmwechsel', Math.abs(s.videoTime - s.item.offset) < 1, `Abweichung ${(s.videoTime - s.item.offset).toFixed(2)} s`);
+
+  // Alle Sender von vorn
+  await page.keyboard.press('Home');
+  await sleep(1200);
+  await page.keyboard.press('3');
+  s = await waitFor((x) => settled(x) && x.channelIndex === 2 && x.videoTime > 0);
+  check('alle Sender von vorn', s.item.position < 5, `Sender 3 bei ${s.item.position.toFixed(1)} s`);
+  await shot('3-breitbild');
+
+  // Testbild, Rauschen, Störung
+  await page.keyboard.press('4');
+  s = await waitFor((x) => settled(x) && x.channelIndex === 3);
+  check('Testbild', s.source === 'canvas' && !s.fault);
+  await shot('4-testbild');
+  await page.keyboard.press('5');
+  s = await waitFor((x) => x.channelIndex === 4 && !x.switching);
+  check('Sender ohne Signal zeigt Rauschen', s.source === null && s.directorMode === 'static');
+  await shot('5-rauschen');
+  await page.keyboard.press('6');
+  s = await waitFor((x) => settled(x) && x.channelIndex === 5);
+  check('Sender mit defektem Film zeigt Störungstafel', s.fault && s.source === 'canvas');
+  await shot('6-stoerung');
+  await page.keyboard.press('1');
+  s = await waitFor((x) => settled(x) && x.channelIndex === 0 && x.videoTime > 0 && !x.fault);
+  check('danach laufen die anderen Sender normal', !s.fault && s.source === 'video' && !s.videoPaused);
+
+  // Schnelles Durchdrehen am Senderknopf
+  for (let i = 0; i < 12; i++) {
+    await page.keyboard.press('ArrowUp');
+    await sleep(40);
+  }
+  s = await waitFor((x) => settled(x) && x.videoTime > 0, 8000);
+  check('schnelles Durchschalten endet auf dem richtigen Sender', s.channelIndex === 0 && s.source === 'video' && !s.videoPaused && !s.fault, `Sender ${s.channelIndex + 1}`);
+
+  // Aus- und Einschalten
+  await page.keyboard.press('p');
+  s = await waitFor((x) => x.directorPower === 'off', 5000);
+  check('Ausschalten', !s.power && s.directorPower === 'off' && s.gain === 0 && s.videoPaused);
+  await shot('7-aus');
+  await page.keyboard.press('ArrowUp');
+  await sleep(300);
+  await page.keyboard.press('p');
+  s = await waitFor((x) => x.directorPower === 'on' && x.videoTime > 0, 8000);
+  check('Einschalten (Sender wurde im ausgeschalteten Zustand weitergedreht)', s.power && s.channelIndex === 1 && !s.videoPaused && s.gain === 1);
+
+  // Lautstärke und Einstellungen über die Fernbedienung
+  await page.keyboard.press('-');
+  await sleep(300);
+  const volume = await page.evaluate(() => window.tv.settings.audio.volume);
+  check('Lautstärke per Taste', Math.abs(volume - 0.75) < 0.001, String(volume));
+  await fetch(`${base}/api/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ patch: { effects: { curvature: 1.2 }, screen: { rotate: 90 } } }) });
+  await sleep(500);
+  const live = await page.evaluate(() => [window.tv.settings.effects.curvature, window.tv.settings.screen.rotate]);
+  check('Einstellungen der Fernbedienung wirken sofort', live[0] === 1.2 && live[1] === 90);
+  await shot('8-gedreht');
+  await fetch(`${base}/api/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reset: true }) });
+
+  // Zustand übersteht das Neuladen
+  await command('tune', { index: 2 });
+  s = await waitFor((x) => settled(x) && x.channelIndex === 2 && x.videoTime > 0);
+  const posBefore = s.item.position;
+  const tReload = Date.now();
+  await sleep(600);
+  await page.reload();
+  await page.waitForFunction(() => window.tv?.player?.channels.length > 0, null, { timeout: 30000 });
+  s = await waitFor((x) => x.channelIndex === 2 && x.videoTime > 0 && !x.switching, 15000);
+  const exp = (posBefore + (Date.now() - tReload) / 1000) % s.item.total;
+  const d2 = Math.min(Math.abs(s.item.position - exp), s.item.total - Math.abs(s.item.position - exp));
+  check('nach Neuladen: gleicher Sender, Programm lief weiter', s.channelIndex === 2 && d2 < 1, `erwartet ${exp.toFixed(1)} s, ist ${s.item.position.toFixed(1)} s`);
+
+  // Fernbedienungsseite
+  const admin = await browser.newPage({ viewport: { width: 420, height: 900 } });
+  const adminErrors = [];
+  admin.on('pageerror', (e) => adminErrors.push(e.message));
+  await admin.goto(`${base}/admin`);
+  await admin.waitForFunction(() => document.querySelectorAll('#channels button').length === 6, null, { timeout: 10000 }).catch(() => {});
+  const buttons = await admin.locator('#channels button').count();
+  check('Fernbedienung zeigt die Sender', buttons === 6, `${buttons} Sender`);
+  await admin.locator('#channels button').nth(3).click();
+  s = await waitFor((x) => settled(x) && x.channelIndex === 3);
+  check('Umschalten über die Fernbedienung', s.channelIndex === 3);
+  await admin.locator('#pause').click();
+  s = await waitFor((x) => x.paused);
+  check('Pause über die Fernbedienung', s.paused);
+  await admin.locator('#pause').click();
+  await waitFor((x) => !x.paused);
+  const overflow = await admin.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  check('Fernbedienung passt auf ein Telefon', overflow <= 0, `${overflow}px`);
+  if (shots) await admin.screenshot({ path: path.join(shots, '9-fernbedienung.png'), fullPage: true });
+  check('keine Skriptfehler', pageErrors.length === 0 && adminErrors.length === 0, [...pageErrors, ...adminErrors].join(' | '));
+} catch (err) {
+  failed++;
+  console.error('Abbruch:', err);
+} finally {
+  await browser.close();
+  await app.close();
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+console.log(failed ? `\n${failed} Prüfung(en) fehlgeschlagen.` : '\nAlle Prüfungen bestanden.');
+process.exit(failed ? 1 : 0);

@@ -1,0 +1,17 @@
+{
+  "name": "tv-simulator-1977",
+  "version": "1.0.0",
+  "description": "Ausstellungs-Videoplayer, der einen Fernseher von 1977 simuliert (50 Jahre Dreieich)",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "kiosk": "node server.js --kiosk",
+    "demo": "node tools/make-demo.mjs",
+    "test": "node --test test/*.test.mjs",
+    "test:e2e": "node test/e2e.mjs"
+  }
+}

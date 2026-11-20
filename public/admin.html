@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fernbedienung</title>
+    <link rel="stylesheet" href="admin.css" />
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Fernbedienung</h1>
+        <p class="sub">TV-Simulator 1977</p>
+      </div>
+      <span id="link" class="pill off">keine Anzeige</span>
+    </header>
+
+    <main>
+      <section class="card" id="now">
+        <div class="now-top">
+          <div>
+            <div class="label">Jetzt läuft</div>
+            <div id="now-channel" class="now-channel">–</div>
+            <div id="now-film" class="now-film"></div>
+          </div>
+          <div id="badges" class="badges"></div>
+        </div>
+        <div class="bar"><div id="progress"></div></div>
+        <div class="times"><span id="time-pos"></span><span id="time-total"></span></div>
+        <div id="alerts"></div>
+      </section>
+
+      <section class="card">
+        <h2>Sender</h2>
+        <div id="channels" class="channels"></div>
+        <div class="row">
+          <button data-cmd="channelDown">◀ Sender zurück</button>
+          <button data-cmd="channelUp">Sender vor ▶</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Wiedergabe</h2>
+        <div class="row">
+          <button id="pause" class="primary" data-cmd="pause">Pause</button>
+          <button data-cmd="restartFilm">Film neu starten</button>
+        </div>
+        <div class="row">
+          <button data-cmd="prevFilm">⏮ Film zurück</button>
+          <button data-cmd="seek" data-args='{"seconds":-30}'>−30 s</button>
+          <button data-cmd="seek" data-args='{"seconds":30}'>+30 s</button>
+          <button data-cmd="nextFilm">Film vor ⏭</button>
+        </div>
+        <div class="row">
+          <button data-cmd="restartChannel">Diesen Sender von vorn</button>
+          <button data-cmd="restartAll">Alle Sender von vorn</button>
+        </div>
+        <p class="note">Alle Sender laufen gleichzeitig weiter – wie echte Programme. „Pause“ hält alle Sender an.</p>
+      </section>
+
+      <section class="card">
+        <h2>Gerät</h2>
+        <div class="row">
+          <button id="power" data-cmd="power">Ausschalten</button>
+          <button id="mute" data-cmd="mute">Ton aus</button>
+          <button data-cmd="glitch">Bildstörung</button>
+        </div>
+        <div id="controls-device"></div>
+      </section>
+
+      <section class="card">
+        <h2>Bild</h2>
+        <div class="label">Voreinstellungen</div>
+        <div id="presets" class="row wrap"></div>
+        <div id="controls-picture"></div>
+      </section>
+
+      <section class="card">
+        <h2>Einbau in das Gehäuse</h2>
+        <p class="note">Hier wird das Bild so verschoben und skaliert, dass es genau in den Ausschnitt der Kiste passt.</p>
+        <div id="controls-screen"></div>
+      </section>
+
+      <section class="card">
+        <h2>Ton</h2>
+        <div id="controls-audio"></div>
+      </section>
+
+      <section class="card">
+        <h2>Zeitsteuerung</h2>
+        <p class="note">Uhrzeiten im Format 09:30. Leeres Feld = aus.</p>
+        <div id="controls-schedule"></div>
+      </section>
+
+      <section class="card">
+        <h2>System</h2>
+        <div class="row wrap">
+          <button data-cmd="rescan">Filme neu einlesen</button>
+          <button data-cmd="reload">Anzeige neu laden</button>
+          <button data-system="reloadConfig">config.json neu laden</button>
+          <button data-system="restartBrowser">Browser neu starten</button>
+        </div>
+        <div class="row wrap">
+          <button id="reset" class="danger">Alle Einstellungen zurücksetzen</button>
+          <button id="quit" class="danger">TV-Simulator beenden</button>
+        </div>
+        <div id="system-info" class="note"></div>
+      </section>
+    </main>
+    <script type="module" src="admin.js"></script>
+  </body>
+</html>
