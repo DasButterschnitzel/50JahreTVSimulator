@@ -1,6 +1,6 @@
 {
   "name": "tv-simulator-1977",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Ausstellungs-Videoplayer, der einen Fernseher von 1977 simuliert (50 Jahre Dreieich)",
   "type": "module",
   "private": true,

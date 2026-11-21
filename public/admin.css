@@ -66,6 +66,7 @@ main {
   color: var(--dim);
 }
 .note {
+  overflow-wrap: anywhere;
   margin: 10px 0 0;
   font-size: 13px;
   color: var(--dim);
@@ -237,6 +238,35 @@ summary {
 }
 .control.inline {
   grid-template-columns: minmax(0, 1fr) auto;
+}
+textarea {
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: #17110b;
+  border: 1px solid #55402a;
+  border-radius: 8px;
+  resize: vertical;
+}
+.channels .entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #2c2014;
+  border: 1px solid #55402a;
+  border-radius: 8px;
+}
+.channels .entry .name {
+  flex: 1 1 9em;
+}
+.channels .entry button {
+  flex: none;
+  min-height: 36px;
 }
 .control select,
 .control input[type='text'] {

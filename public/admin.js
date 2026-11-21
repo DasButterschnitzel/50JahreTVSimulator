@@ -1,4 +1,5 @@
 // Fernbedienung: steuert die Anzeige über den Server.
+import { parseYouTubeUrl } from './js/youtube.js';
 
 const $ = (id) => document.getElementById(id);
 const PIN_KEY = 'tv77.pin';
@@ -145,6 +146,7 @@ const GROUPS = {
         { path: 'effects.powerAnimation', label: 'Ein-/Ausschaltanimation', type: 'check' },
         { path: 'effects.renderScale', label: 'Auflösung der Darstellung', min: 0.4, max: 1, step: 0.05, format: pct, hint: 'Kleiner = weniger Last für schwache Rechner (Raspberry Pi).' },
         { path: 'effects.maxFps', label: 'Bilder pro Sekunde begrenzen (0 = aus)', min: 0, max: 60, step: 5, format: num(0) },
+        { path: 'youtube.warp', label: 'Wölbung auch für das YouTube-Bild', type: 'check', hint: 'Ausschalten, falls YouTube-Sender ruckeln.' },
       ],
     },
   ],
@@ -309,11 +311,75 @@ function buildControl(item) {
   return wrap;
 }
 
+// ---------------------------------------------------------------- YouTube-Sender
+
+function youtubeChannels() {
+  const list = settings?.youtube?.channels;
+  return Array.isArray(list) ? list.filter((c) => c && Array.isArray(c.urls)) : [];
+}
+
+function saveYouTubeChannels(channels) {
+  return api('/api/settings', { patch: { youtube: { channels } } })
+    .then(() => send('rescan'))
+    .catch((err) => alert(err.message));
+}
+
+function showYouTubeChannels() {
+  const box = $('yt-list');
+  box.replaceChildren();
+  for (const channel of youtubeChannels()) {
+    const row = document.createElement('div');
+    row.className = 'entry';
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = channel.name || 'YouTube';
+    const meta = document.createElement('span');
+    meta.className = 'meta';
+    const lists = channel.urls.filter((u) => parseYouTubeUrl(u)?.playlist).length;
+    const videos = channel.urls.length - lists;
+    meta.textContent = [videos ? `${videos} Video${videos === 1 ? '' : 's'}` : '', lists ? `${lists} Playlist${lists === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ');
+    const remove = document.createElement('button');
+    remove.textContent = 'Entfernen';
+    remove.addEventListener('click', () => {
+      if (confirm(`YouTube-Sender „${channel.name}“ entfernen?`)) saveYouTubeChannels(youtubeChannels().filter((c) => c !== channel));
+    });
+    row.append(name, meta, remove);
+    box.appendChild(row);
+  }
+}
+
+function addYouTubeChannel() {
+  const error = $('yt-error');
+  const lines = $('yt-urls')
+    .value.split(/[\n,;]+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const bad = lines.filter((line) => !parseYouTubeUrl(line));
+  if (!lines.length) {
+    error.textContent = 'Bitte mindestens eine YouTube-Adresse eintragen.';
+    return;
+  }
+  if (bad.length) {
+    error.textContent = `Keine gültige YouTube-Adresse: ${bad.join(', ')}`;
+    return;
+  }
+  error.textContent = '';
+  const existing = youtubeChannels();
+  const name = $('yt-name').value.trim() || `YouTube ${existing.length + 1}`;
+  const id = `yt-${Date.now().toString(36)}`;
+  saveYouTubeChannels([...existing, { id, name, urls: lines }]).then(() => {
+    $('yt-name').value = '';
+    $('yt-urls').value = '';
+  });
+}
+
 function showSettings() {
   if (!settings) return;
+  showYouTubeChannels();
   for (const { item, input, valueEl, type } of controls) {
     if (document.activeElement === input && type !== 'check') continue;
     const value = getPath(settings, item.path);
+    if (value === undefined && type !== 'check') continue;
     if (type === 'check') input.checked = value !== false && !!value;
     else if (type === 'select') {
       const match = item.options.find(([v]) => (item.numeric ? Math.abs(Number(v) - Number(value)) < 0.01 : v === value));
@@ -378,7 +444,7 @@ function showStatus() {
   const messages = [...(status.warnings || [])];
   if (status.audioBlocked) messages.push('Der Browser sperrt den Ton. An der Anzeige einmal eine Taste drücken oder den Kioskmodus (start-Skript) benutzen.');
   for (const c of status.channels || []) {
-    if (c.missing > 0) messages.push(`Sender „${c.name}“: ${c.missing} Datei(en) lassen sich nicht abspielen.`);
+    if (c.missing > 0) messages.push(`Sender „${c.name}“: ${c.missing} ${c.type === 'youtube' ? 'Adresse(n) sind keine gültigen YouTube-Adressen' : 'Datei(en) lassen sich nicht abspielen'}.`);
   }
   for (const e of status.errors || []) messages.push(e.message);
   for (const message of [...new Set(messages)].slice(0, 8)) {
@@ -403,7 +469,14 @@ function showStatus() {
       name.textContent = c.name;
       const meta = document.createElement('span');
       meta.className = 'meta';
-      meta.textContent = c.type === 'video' ? `${c.films} Film${c.films === 1 ? '' : 'e'} · ${formatTime(c.total)}` : c.type === 'testcard' ? 'Testbild' : 'Rauschen';
+      meta.textContent =
+        c.type === 'video'
+          ? `${c.films} Film${c.films === 1 ? '' : 'e'} · ${formatTime(c.total)}`
+          : c.type === 'youtube'
+            ? `YouTube · ${c.films ? `${c.films} Video${c.films === 1 ? '' : 's'}` : 'Playlist'}`
+            : c.type === 'testcard'
+              ? 'Testbild'
+              : 'Rauschen';
       button.append(numEl, name, meta);
       button.addEventListener('click', () => send('tune', { index }));
       box.appendChild(button);
@@ -427,7 +500,7 @@ function showMedia(config) {
   $('media-card').hidden = false;
   const media = config.media || {};
   $('media-label').textContent = media.label || '–';
-  $('media-app-folder').textContent = media.appFolder ? `Ohne Auswahl sucht die App hier: ${media.appFolder}` : '';
+  $('media-app-folder').textContent = media.appFolder ? `Zusätzlich liest die App immer ihren eigenen Ordner: ${media.appFolder}` : '';
   // Funktionen, die es nur am PC gibt
   document.querySelectorAll('[data-system="restartBrowser"]').forEach((b) => (b.textContent = 'Anzeige neu starten'));
 }
@@ -475,6 +548,7 @@ async function start() {
         .catch((err) => alert(err.message));
     });
   });
+  $('yt-add').addEventListener('click', addYouTubeChannel);
   $('reset').addEventListener('click', () => {
     if (confirm('Alle in der Fernbedienung geänderten Einstellungen verwerfen? Es gelten dann wieder die Werte aus config.json.')) {
       api('/api/settings', { reset: true }).catch((err) => alert(err.message));

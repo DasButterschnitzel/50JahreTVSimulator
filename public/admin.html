@@ -39,16 +39,47 @@
         </div>
       </section>
 
+      <section class="card">
+        <h2>YouTube-Sender</h2>
+        <div id="yt-list" class="channels"></div>
+        <div class="control inline">
+          <label for="yt-name">Name des Senders</label>
+          <input id="yt-name" type="text" maxlength="40" placeholder="z. B. Hessenschau" />
+        </div>
+        <label class="label" for="yt-urls" style="display: block; margin-top: 12px">Adressen von Videos oder Playlists (eine pro Zeile)</label>
+        <textarea id="yt-urls" rows="3" placeholder="https://www.youtube.com/watch?v=…&#10;https://www.youtube.com/playlist?list=…"></textarea>
+        <div id="yt-error" class="note" style="color: #ffb9a8"></div>
+        <div class="row">
+          <button id="yt-add" class="primary">YouTube-Sender hinzufügen</button>
+        </div>
+        <p class="note">
+          Braucht Internet. Mehrere Videos laufen nacheinander in Endlosschleife und – wie alle Sender – im Hintergrund weiter. YouTube kann
+          Werbung einblenden; manche Videos erlauben das Einbetten nicht und werden übersprungen. Röhrenform, Zeilen, Glas und Rauschen
+          liegen als Schicht über dem YouTube-Bild; die volle Simulation (Farbunschärfe, Geisterbild, Nachleuchten) gibt es nur für eigene
+          Filmdateien.
+        </p>
+      </section>
+
       <section class="card" id="media-card" hidden>
         <h2>Filme</h2>
-        <div class="label">Filmordner</div>
-        <div id="media-label" class="now-film">–</div>
+        <div class="label">Quellen</div>
+        <div id="media-label" class="now-film" style="white-space: pre-line">–</div>
         <div class="row wrap">
-          <button class="primary" data-system="pickFolder">Filmordner wählen</button>
-          <button data-system="useAppFolder">App-Ordner benutzen</button>
-          <button data-cmd="rescan">Neu einlesen</button>
+          <button class="primary" data-system="pickAlbums">Alben vom Gerät</button>
+          <button class="primary" data-system="pickVideos">Einzelne Videos</button>
         </div>
-        <p class="note">Im gewählten Ordner ist jeder Unterordner ein Sender. Filme direkt im Ordner bilden den Sender „Programm“.</p>
+        <div class="row wrap">
+          <button data-system="pickFolder">Ordner mit Sendern</button>
+          <button data-cmd="rescan">Neu einlesen</button>
+          <button class="danger" data-system="resetMedia">Zurücksetzen</button>
+        </div>
+        <p class="note">
+          <b>Alben vom Gerät:</b> Kamera, Downloads, WhatsApp usw. – jedes gewählte Album wird ein Sender. Android fragt dafür einmal nach dem
+          Zugriff auf Videos.<br />
+          <b>Einzelne Videos:</b> öffnet die Auswahl des Systems; dort erscheinen auch Videos aus Google Fotos. Sie bilden den Sender „Meine
+          Auswahl“.<br />
+          <b>Ordner mit Sendern:</b> für USB-Stick oder SD-Karte – jeder Unterordner ist ein Sender.
+        </p>
         <p id="media-app-folder" class="note"></p>
       </section>
 

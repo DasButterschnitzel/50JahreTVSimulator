@@ -3,12 +3,17 @@
 import { buildSchedule, locate, mod } from './broadcast.js';
 import { watchVideoFrames } from './renderer.js';
 import { drawTestcard, drawFaultCard } from './testcard.js';
+import { prepareYouTubeChannel, rememberYouTubeDuration } from './youtube.js';
 
 const LOAD_TIMEOUT_MS = 12000;
 const STALL_TIMEOUT_MS = 8000;
 const PLAY_TIMEOUT_MS = 3000;
 const SWITCH_TIMEOUT_MS = 30000;
 const FINISH_GRACE_S = 3;
+const YOUTUBE_STALL_TIMEOUT_MS = 120000; // Werbung und langsames Netz sind kein Hänger
+
+/** Sender, die einen Sendeplan aus Filmen haben. */
+const playable = (ch) => !!ch && (ch.type === 'video' || ch.type === 'youtube');
 const FAULT_RETRY_MS = 15000;
 const MAX_DRIFT_S = 2;
 const PRELOAD_BEFORE_END_S = 10;
@@ -63,12 +68,13 @@ function loadVideo(video, url, offset) {
 }
 
 export class Player {
-  constructor({ settings, clock, view, director, audio, log = console, onChange = () => {}, onFatal = () => {}, onDuration = () => {} }) {
+  constructor({ settings, clock, view, director, audio, youtube = null, log = console, onChange = () => {}, onFatal = () => {}, onDuration = () => {} }) {
     this.settings = settings;
     this.clock = clock;
     this.view = view;
     this.director = director;
     this.audio = audio;
+    this.yt = youtube;
     this.log = log;
     this.onChange = onChange;
     this.onFatal = onFatal;
@@ -127,6 +133,11 @@ export class Player {
     return this.channels[this.channelIndex] || null;
   }
 
+  /** Was gerade abgespielt wird: das aktive Videoelement oder der YouTube-Player. */
+  get media() {
+    return this.channel?.type === 'youtube' && this.yt ? this.yt.media : this.active;
+  }
+
   drawCards() {
     drawTestcard(this.testCanvas, this.settings.testcard);
     drawFaultCard(this.faultCanvas);
@@ -143,7 +154,10 @@ export class Player {
     const keepId = preferredId ?? this.channel?.id;
     this.channels = channels;
     this.schedules = new Map();
-    for (const ch of channels) this.schedules.set(ch.id, buildSchedule(ch.files || []));
+    for (const ch of channels) {
+      if (ch.type === 'youtube') prepareYouTubeChannel(ch);
+      this.schedules.set(ch.id, buildSchedule(ch.files || []));
+    }
     const index = channels.findIndex((c) => c.id === keepId);
     this.channelIndex = index >= 0 ? index : Math.min(this.channelIndex, Math.max(0, channels.length - 1));
   }
@@ -167,6 +181,16 @@ export class Player {
     this.view.setSource({ kind: 'video', el: v }, this.sourceOptions(ch));
   }
 
+  /** Das Bild des Senders zeigen: eigenes Video über den Shader oder den YouTube-Player unter der Effektschicht. */
+  show(ch) {
+    if (ch.type === 'youtube') {
+      this.view.showYouTube(ch);
+      this.yt.setAudible(true);
+    } else {
+      this.showVideo(this.active, ch);
+    }
+  }
+
   showCard(canvas, ch) {
     this.view.setSource({ kind: 'canvas', el: canvas }, ch ? { blackWhite: !!ch.options?.blackWhite } : {});
   }
@@ -186,6 +210,7 @@ export class Player {
   stopVideos() {
     this.standbyFor = null;
     for (const v of this.videos) this.stopVideo(v);
+    this.yt?.stop();
   }
 
   resetWatchdog() {
@@ -224,9 +249,10 @@ export class Player {
     this.suspended = suspended;
     if (suspended) {
       for (const v of this.videos) v.pause();
+      this.yt?.media.pause();
     } else {
       // Die Sendeuhr ist weitergelaufen: an die aktuelle Stelle springen
-      const v = this.active;
+      const v = this.media;
       const loc = this.locateNow();
       if (loc && loc.index === this.itemIndex && !this.fault && !this.loading && !this.switching && v.readyState >= 1 && !v.ended) {
         if (Math.abs(v.currentTime - loc.offset) > 0.3) v.currentTime = Math.min(loc.offset, Math.max(0, v.duration - 0.2));
@@ -238,6 +264,7 @@ export class Player {
 
   /** Nach der ersten Eingabe darf der Ton laufen. */
   unlockAudio() {
+    this.yt?.unlock();
     if (!this.needsGesture) return;
     this.needsGesture = false;
     for (const video of this.videos) video.muted = false;
@@ -300,9 +327,15 @@ export class Player {
       return;
     }
 
+    if (ch.type === 'youtube' && this.yt && ch.pendingPlaylists?.length) {
+      // Inhalt der Playlists bei YouTube erfragen (beim ersten Mal und danach einmal täglich)
+      const changed = await this.yt.resolve(ch);
+      if (token !== this.token) return;
+      if (changed) this.schedules.set(ch.id, buildSchedule(ch.files));
+    }
     const schedule = this.schedule(ch);
     let loaded = false;
-    if (ch.type === 'video' && schedule.items.length) {
+    if (playable(ch) && schedule.items.length) {
       if (ch.options?.onSwitch === 'restart') {
         this.clock.setPosition(ch.id, schedule.total, 0);
         this.onChange();
@@ -317,7 +350,7 @@ export class Player {
       this.showCard(this.testCanvas, ch);
       this.audio.setTone(true);
     } else if (loaded) {
-      this.showVideo(this.active, ch);
+      this.show(ch);
     } else {
       if (!schedule.items.length) this.log.warn(`Sender „${ch.name}" hat keine abspielbaren Filme.`);
       this.setFault();
@@ -327,44 +360,90 @@ export class Player {
     this.switching = false;
   }
 
-  /** Lädt den Film, der laut Sendeuhr jetzt läuft, in das aktive Video. */
-  async loadCurrent(token) {
+  /** Lädt den Film, der laut Sendeuhr jetzt läuft (eigenes Video oder YouTube). */
+  async loadCurrent(token, attempt = 0) {
     const ch = this.channel;
     const loc = this.locateNow(ch);
     if (!loc) return false;
     this.itemIndex = loc.index;
     this.standbyFor = null;
     this.loading = true;
-    const v = this.active;
+    const youtube = ch.type === 'youtube';
     try {
-      // kleine Zugabe für die Ladezeit, damit das Bild zur Sendeuhr passt
-      await loadVideo(v, loc.item.url, loc.offset + (this.clock.paused ? 0 : 0.2));
-      if (token !== this.token) return false;
-      this.noteDuration(ch, loc.index, v.duration);
-      if (!this.clock.paused) await this.play(v);
-      if (token !== this.token) return false;
+      if (youtube) {
+        if (!this.yt) throw new Error('YouTube wird in dieser Anzeige nicht unterstützt');
+        await this.yt.load(loc.item.youtube, loc.offset, this.clock.paused);
+        if (token !== this.token) return false;
+        this.needsGesture = this.needsGesture || this.yt.blocked;
+        this.noteDuration(ch, loc.index, this.yt.media.duration);
+      } else {
+        const v = this.active;
+        // kleine Zugabe für die Ladezeit, damit das Bild zur Sendeuhr passt
+        await loadVideo(v, loc.item.url, loc.offset + (this.clock.paused ? 0 : 0.2));
+        if (token !== this.token) return false;
+        this.noteDuration(ch, loc.index, v.duration);
+        if (!this.clock.paused) await this.play(v);
+        if (token !== this.token) return false;
+      }
       this.resetWatchdog();
       return true;
     } catch (err) {
       if (token !== this.token) return false;
       this.log.warn(`„${loc.item.name}" lässt sich nicht abspielen: ${err.message}`);
+      // Dieses Video geht nicht (gelöscht, privat, Einbetten verboten): zum nächsten brauchbaren weiter
+      if (youtube && err.unplayable && attempt < this.schedule(ch).items.length && this.skipUnplayable(ch, loc.index)) {
+        return this.loadCurrent(token, attempt + 1);
+      }
       return false;
     } finally {
       if (token === this.token) this.loading = false;
     }
   }
 
+  /**
+   * Merkt ein nicht abspielbares YouTube-Video und stellt die Sendeuhr auf das nächste brauchbare.
+   * Liefert false, wenn es keines gibt.
+   */
+  skipUnplayable(ch, index) {
+    const schedule = this.schedule(ch);
+    const count = schedule.items.length;
+    const fileAt = (i) => ch.files.find((f) => f.url === schedule.items[i]?.url);
+    const file = fileAt(index);
+    if (file) file.unplayable = true;
+    for (let step = 1; step < count; step++) {
+      const next = (index + step) % count;
+      if (fileAt(next)?.unplayable) continue;
+      this.clock.setPosition(ch.id, schedule.total, schedule.items[next].start);
+      this.onChange();
+      return true;
+    }
+    return false;
+  }
+
+  /** Fehler des YouTube-Players mitten in der Wiedergabe. */
+  onMediaError(err) {
+    const ch = this.channel;
+    // Während eines Senderwechsels oder Ladevorgangs meldet sich der Fehler dort selbst
+    if (ch?.type !== 'youtube' || !this.powered || this.switching || this.loading) return;
+    this.log.warn(`YouTube: ${err.message}`);
+    if (err.unplayable && !this.skipUnplayable(ch, this.itemIndex)) {
+      this.setFault();
+      return;
+    }
+    this.cut({ glitch: false });
+  }
+
   /** Harter Schnitt ohne Senderrauschen (Filmwechsel, Sprung, neuer Versuch). */
   async cut({ glitch = true } = {}) {
     const ch = this.channel;
-    if (!ch || ch.type !== 'video' || !this.powered) return;
+    if (!playable(ch) || !this.powered) return;
     const token = ++this.token;
     if (glitch) this.director.glitch(0.3, 0.7);
     const loaded = await this.loadCurrent(token);
     if (token !== this.token) return;
     if (loaded) {
       this.fault = null;
-      this.showVideo(this.active, ch);
+      this.show(ch);
     } else {
       this.setFault();
     }
@@ -385,7 +464,12 @@ export class Player {
     const file = ch.files.find((f) => f.url === item.url);
     if (!file) return;
     file.duration = duration;
-    this.onDuration(file);
+    if (file.youtube) {
+      file.guessed = false;
+      rememberYouTubeDuration(file.youtube, duration);
+    } else {
+      this.onDuration(file);
+    }
     const rebuilt = buildSchedule(ch.files);
     this.schedules.set(ch.id, rebuilt);
     if (loc && rebuilt.items[loc.index]) {
@@ -396,9 +480,9 @@ export class Player {
 
   /** Film zu Ende: nahtlos zum nächsten wechseln. */
   onEnded(v) {
-    if (v !== this.active || this.switching || this.loading || !this.powered || this.clock.paused || this.suspended) return;
+    if (v !== this.media || this.switching || this.loading || !this.powered || this.clock.paused || this.suspended) return;
     const ch = this.channel;
-    if (!ch || ch.type !== 'video') return;
+    if (!playable(ch)) return;
     const schedule = this.schedule(ch);
     const count = schedule.items.length;
     if (!count || this.itemIndex < 0) return;
@@ -413,7 +497,7 @@ export class Player {
     }
 
     const sb = this.standby;
-    const armed = this.standbyFor && this.standbyFor.channel === ch.id && this.standbyFor.index === next;
+    const armed = !v.youtube && this.standbyFor && this.standbyFor.channel === ch.id && this.standbyFor.index === next;
     if (armed && sb.readyState >= 2 && !sb.error) {
       this.activeIdx ^= 1;
       this.itemIndex = next;
@@ -451,7 +535,7 @@ export class Player {
     }
     if (!this.powered || this.switching || this.loading || this.suspended) return;
     const ch = this.channel;
-    if (!ch || ch.type !== 'video') return;
+    if (!playable(ch)) return;
     const schedule = this.schedule(ch);
     const count = schedule.items.length;
     const now = performance.now();
@@ -464,7 +548,7 @@ export class Player {
     }
     if (!count) return;
 
-    const v = this.active;
+    const v = this.media;
     if (this.clock.paused) {
       if (!v.paused) v.pause();
       this.resetWatchdog();
@@ -472,6 +556,11 @@ export class Player {
     }
     if (v.ended) {
       this.onEnded(v);
+      return;
+    }
+    if (v.live) {
+      // Live-Übertragung: läuft einfach, ohne Abgleich mit der Sendeuhr
+      this.resetWatchdog();
       return;
     }
 
@@ -496,7 +585,7 @@ export class Player {
       this.resetWatchdog();
     }
 
-    if (loc.remaining < PRELOAD_BEFORE_END_S || (Number.isFinite(left) && left < PRELOAD_BEFORE_END_S)) {
+    if (!v.youtube && (loc.remaining < PRELOAD_BEFORE_END_S || (Number.isFinite(left) && left < PRELOAD_BEFORE_END_S))) {
       this.armStandby(ch, schedule, this.itemIndex);
     }
 
@@ -506,7 +595,7 @@ export class Player {
       this.lastTime = v.currentTime;
       this.lastAdvance = now;
       if (now - this.healthySince > 30000) this.stalls = 0;
-    } else if (now - this.lastAdvance > STALL_TIMEOUT_MS) {
+    } else if (now - this.lastAdvance > (v.youtube ? YOUTUBE_STALL_TIMEOUT_MS : STALL_TIMEOUT_MS)) {
       this.stalls++;
       this.log.warn(`Wiedergabe hängt (${this.stalls}. Mal) – Sender wird neu eingestellt.`);
       if (this.stalls >= MAX_STALLS) {
@@ -522,10 +611,10 @@ export class Player {
     this.onChange();
     if (!this.powered || this.switching) return;
     const ch = this.channel;
-    if (!ch || ch.type !== 'video') return;
+    if (!playable(ch)) return;
     const loc = this.locateNow(ch);
     if (!loc) return;
-    const v = this.active;
+    const v = this.media;
     this.standbyFor = null;
     if (!this.fault && !this.loading && loc.index === this.itemIndex && v.readyState >= 1 && !v.ended) {
       this.director.glitch(0.25, 0.6);
@@ -539,7 +628,7 @@ export class Player {
   setPaused(paused) {
     if (paused) {
       this.clock.pause();
-      this.active.pause();
+      this.media.pause();
     } else {
       this.clock.resume();
     }
@@ -549,7 +638,7 @@ export class Player {
 
   seekBy(seconds) {
     const ch = this.channel;
-    if (!ch || ch.type !== 'video') return;
+    if (!playable(ch)) return;
     const schedule = this.schedule(ch);
     if (!schedule.total) return;
     this.clock.shift(ch.id, schedule.total, seconds);
@@ -614,7 +703,7 @@ export class Player {
 
   status() {
     const ch = this.channel;
-    const loc = ch && ch.type === 'video' ? this.locateNow(ch) : null;
+    const loc = playable(ch) ? this.locateNow(ch) : null;
     const schedule = ch ? this.schedule(ch) : null;
     return {
       channelIndex: this.channelIndex,
@@ -623,7 +712,8 @@ export class Player {
       power: this.powered,
       fault: !!this.fault,
       switching: this.switching,
-      needsGesture: this.needsGesture,
+      needsGesture: this.needsGesture || !!this.yt?.blocked,
+      youtube: ch?.type === 'youtube',
       item: loc
         ? {
             index: loc.index,
@@ -637,7 +727,8 @@ export class Player {
         : null,
       channels: this.channels.map((c) => {
         const s = this.schedule(c);
-        return { id: c.id, name: c.name, type: c.type, films: s.items.length, total: s.total, missing: (c.files?.length || 0) - s.items.length };
+        const missing = (c.files?.length || 0) - s.items.length + (c.invalidUrls?.length || 0);
+        return { id: c.id, name: c.name, type: c.type, films: s.items.length, total: s.total, missing, pending: c.pendingPlaylists?.length || 0 };
       }),
     };
   }

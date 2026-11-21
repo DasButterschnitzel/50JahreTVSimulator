@@ -5,15 +5,6 @@ const SIGNAL_W = 768; // PAL mit quadratischen Pixeln
 const SIGNAL_H = 576;
 const BLUR_W = 192;
 const BLUR_H = 144;
-const MASK_TYPES = { none: 0, aperture: 1, slot: 2, dots: 3 };
-
-function hexToRgb(hex) {
-  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
-  if (!m) return [0, 0, 0];
-  const n = parseInt(m[1], 16);
-  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
-}
-
 const supportsFrameCallback = typeof HTMLVideoElement !== 'undefined' && 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
 
 /** Meldet, sobald ein Video ein neues Bild hat, damit nur dann zur Grafikkarte kopiert wird. */
@@ -28,6 +19,39 @@ export function watchVideoFrames(video) {
   for (const ev of ['seeked', 'loadeddata', 'playing']) {
     video.addEventListener(ev, () => (video.__frameDirty = true));
   }
+}
+
+/**
+ * Lage der Bildröhre in einer Fläche von width x height Pixeln (Ursprung oben links):
+ * Mitte, halbe Breite/Höhe und Drehung.
+ */
+export function computeTubeRect(screen, width, height) {
+  const degrees = Number(screen.rotate) || 0;
+  const angle = (degrees * Math.PI) / 180;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const w = (Number(screen.aspect) || 4 / 3) * (Number(screen.stretchX) || 1);
+  const boxW = Math.abs(cos) * w + Math.abs(sin);
+  const boxH = Math.abs(sin) * w + Math.abs(cos);
+  const k = Math.min(width / boxW, height / boxH) * (Number(screen.scale) || 1);
+  return {
+    cx: width / 2 + (Number(screen.x) || 0) * height,
+    cy: height / 2 + (Number(screen.y) || 0) * height,
+    hw: (w * k) / 2,
+    hh: k / 2,
+    cos,
+    sin,
+    angle: degrees,
+  };
+}
+
+export const MASK_TYPES = { none: 0, aperture: 1, slot: 2, dots: 3 };
+
+export function hexToRgb(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
+  if (!m) return [0, 0, 0];
+  const n = parseInt(m[1], 16);
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }
 
 export class Renderer {
@@ -245,7 +269,8 @@ export class Renderer {
     let sy = 1;
     if (this.source?.kind === 'canvas' || fit === 'stretch') {
       // Testbild und "stretch" füllen die Röhre immer ganz
-    } else if (fit === 'fit') {
+    } else if (fit === 'fit' || sourceAspect < 1) {
+      // ganz zeigen; Hochkant-Videos (Handy) immer, sonst bliebe nur ein schmaler Streifen aus der Bildmitte
       if (sourceAspect > tubeAspect) sy = sourceAspect / tubeAspect;
       else sx = tubeAspect / sourceAspect;
     } else if (sourceAspect > tubeAspect) {
@@ -257,21 +282,10 @@ export class Renderer {
     return [sx * zoom, sy * zoom, 0, 0];
   }
 
-  /** Lage der Röhre auf dem Monitor in Pixeln. */
+  /** Lage der Röhre auf dem Monitor in Pixeln (Ursprung unten links, wie WebGL). */
   tubeRect() {
-    const screen = this.settings.screen;
-    const W = this.canvas.width;
-    const H = this.canvas.height;
-    const angle = ((Number(screen.rotate) || 0) * Math.PI) / 180;
-    const cos = Math.cos(angle);
-    const sin = Math.sin(angle);
-    const w = (Number(screen.aspect) || 4 / 3) * (Number(screen.stretchX) || 1);
-    const boxW = Math.abs(cos) * w + Math.abs(sin);
-    const boxH = Math.abs(sin) * w + Math.abs(cos);
-    const k = Math.min(W / boxW, H / boxH) * (Number(screen.scale) || 1);
-    const cx = W / 2 + (Number(screen.x) || 0) * H;
-    const cy = H / 2 + (Number(screen.y) || 0) * H;
-    return { cx, cy: H - cy, hw: (w * k) / 2, hh: k / 2, cos, sin };
+    const rect = computeTubeRect(this.settings.screen, this.canvas.width, this.canvas.height);
+    return { ...rect, cy: this.canvas.height - rect.cy };
   }
 
   /**

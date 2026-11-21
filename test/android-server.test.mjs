@@ -16,7 +16,7 @@ function javaSources(dir, out = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) javaSources(full, out);
-    else if (entry.name.endsWith('.java') && full.includes(`${path.sep}server${path.sep}`)) out.push(full);
+    else if (entry.name.endsWith('.java') && !entry.name.endsWith('Test.java') && full.includes(`${path.sep}server${path.sep}`)) out.push(full);
   }
   return out;
 }

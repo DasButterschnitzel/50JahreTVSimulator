@@ -12,6 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp } from '../server.js';
+import { installYouTubeMock } from './youtube-mock.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
@@ -47,7 +48,7 @@ if (useJava) {
     for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
       const full = path.join(d, entry.name);
       if (entry.isDirectory()) collect(full);
-      else if (entry.name.endsWith('.java') && full.includes(`${path.sep}server${path.sep}`)) sources.push(full);
+      else if (entry.name.endsWith('.java') && !entry.name.endsWith('Test.java') && full.includes(`${path.sep}server${path.sep}`)) sources.push(full);
     }
   };
   collect(path.join(ROOT, 'android/app/src'));
@@ -211,7 +212,7 @@ try {
     await sleep(40);
   }
   s = await waitFor((x) => settled(x) && x.videoTime > 0, 8000);
-  check('schnelles Durchschalten endet auf dem richtigen Sender', s.channelIndex === 0 && s.source === 'video' && !s.videoPaused && !s.fault, `Sender ${s.channelIndex + 1}`);
+  check('schnelles Durchschalten endet auf dem richtigen Sender', s.channelIndex === 0 && s.source === 'video' && !s.videoPaused && !s.fault, `Sender ${s.channelIndex + 1}, Quelle ${s.source}, pausiert ${s.videoPaused}, Störung ${s.fault}, Bild ${s.videoTime.toFixed(2)} s, schaltet ${s.switching}, ${s.directorMode}`);
 
   // Aus- und Einschalten
   await page.keyboard.press('p');
@@ -287,6 +288,141 @@ try {
   await setVisibility('visible');
   s = await waitFor((x) => !x.videoPaused && x.playing === x.item.index && Math.abs(x.videoTime - x.item.offset) < 1, 8000);
   check('zurück im Vordergrund läuft das Bild an der richtigen Stelle weiter', !s.videoPaused && Math.abs(s.videoTime - s.item.offset) < 1, `Abweichung ${(s.videoTime - s.item.offset).toFixed(2)} s`);
+
+  // YouTube-Sender (gegen einen nachgebauten YouTube-Player, siehe test/youtube-mock.mjs)
+  await page.goto('about:blank');
+  await fetch(`${base}/api/settings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      patch: {
+        youtube: {
+          channels: [
+            { id: 'yt-liste', name: 'YT Liste', urls: ['https://youtu.be/AAAAAAAAAAA', 'https://www.youtube.com/playlist?list=PLtestlist0001'] },
+            { id: 'yt-kaputt', name: 'YT kaputt', urls: ['https://youtu.be/NOTFOUND000', 'https://youtu.be/NOEMBED0000', 'https://www.youtube.com/watch?v=BBBBBBBBBBB', 'kein link'] },
+          ],
+        },
+      },
+    }),
+  });
+  const yt = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  const ytErrors = [];
+  yt.on('pageerror', (e) => ytErrors.push(e.message));
+  await installYouTubeMock(yt, {
+    videos: { AAAAAAAAAAA: '/media/01-demo-farbe/01-testmuster.webm', BBBBBBBBBBB: '/media/01-demo-farbe/02-farbbalken.webm', CCCCCCCCCCC: '/media/03-demo-breitbild/01-breitbild.webm' },
+    playlists: { PLtestlist0001: ['CCCCCCCCCCC', 'BBBBBBBBBBB'] },
+  });
+  await yt.goto(base);
+  await yt.waitForFunction(() => window.tv?.player?.channels.length > 0 && !window.tv.player.switching, null, { timeout: 30000 });
+  const ytState = () =>
+    yt.evaluate(() => {
+      const p = window.tv.player;
+      const mock = window.__ytPlayers?.[0];
+      const st = p.status();
+      return {
+        channel: st.channelIndex,
+        types: st.channels.map((c) => c.type),
+        films: st.channels[st.channelIndex]?.films,
+        missing: st.channels[st.channelIndex]?.missing,
+        item: st.item,
+        playing: p.itemIndex,
+        fault: st.fault,
+        switching: st.switching,
+        ytMode: document.body.classList.contains('yt'),
+        overlay: window.tv.overlay.ok,
+        idle: window.tv.director.mode === 'idle',
+        time: mock?.video?.currentTime ?? -1,
+        paused: mock?.video?.paused ?? true,
+        muted: mock?.video?.muted ?? true,
+        volume: mock?.volume,
+        id: mock?.id,
+        calls: mock?.calls ?? [],
+        box: (() => {
+          const r = document.getElementById('yt').getBoundingClientRect();
+          return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)];
+        })(),
+        filter: document.getElementById('yt').style.filter,
+        source: window.tv.renderer.source?.kind ?? null,
+      };
+    });
+  const ytWait = async (fn, timeout = 20000) => {
+    const end = Date.now() + timeout;
+    for (;;) {
+      const x = await ytState();
+      if (fn(x) || Date.now() > end) return x;
+      await sleep(150);
+    }
+  };
+  const inSync = (x) => x.ytMode && x.idle && !x.switching && !x.paused && x.item && x.playing === x.item.index && Math.abs(x.time - x.item.offset) < 1.5;
+  let y = await ytState();
+  check('YouTube-Sender stehen hinter den Ordner-Sendern', y.types.join(',') === 'video,video,video,testcard,noise,video,youtube,youtube', y.types.join(','));
+  await yt.keyboard.press('7');
+  // Beim ersten Mal sind die Längen geschätzt; sie werden beim Abspielen gelernt, bis Bild und Sendeuhr übereinstimmen.
+  y = await ytWait(inSync, 40000);
+  check('YouTube-Sender läuft unter der Effektschicht', y.ytMode && y.overlay && !y.paused && !y.fault, `Video ${y.id}, ${y.time.toFixed(1)} s`);
+  check('Playlist wurde aufgelöst (1 Video + 2 aus der Playlist)', y.films === 3, `${y.films} Videos`);
+  check('YouTube-Bild folgt der Sendeuhr', inSync(y), y.item ? `Abweichung ${(y.time - y.item.offset).toFixed(2)} s` : 'kein Film');
+  check('YouTube-Bild sitzt in der Bildröhre (4:3, mittig)', Math.abs(y.box[2] / y.box[3] - 4 / 3) < 0.02 && Math.abs(y.box[0] + y.box[2] / 2 - 640) < 2 && y.box[3] === 720, y.box.join(','));
+  check('Wölbung und Farbfilter liegen auf dem YouTube-Bild', y.filter.includes('url(') && y.filter.includes('contrast'), y.filter);
+  y = await ytWait((x) => inSync(x) && !x.muted);
+  check('Ton von YouTube ist an und folgt der Lautstärke', !y.muted && y.volume === Math.round(0.8 ** 2 * 100), `Lautstärke ${y.volume}`);
+  await sleep(1500);
+  await shot('11-youtube');
+  if (shots) await yt.screenshot({ path: path.join(shots, '11-youtube.png') });
+
+  await yt.keyboard.press(' ');
+  y = await ytWait((x) => x.paused);
+  const ytPausedAt = y.time;
+  await sleep(1200);
+  y = await ytState();
+  check('Pause hält YouTube an', y.paused && Math.abs(y.time - ytPausedAt) < 0.1);
+  await yt.keyboard.press(' ');
+  y = await ytWait((x) => !x.paused);
+  check('Weiter nach Pause', !y.paused);
+  await yt.keyboard.press('r');
+  y = await ytWait((x) => !x.paused && x.time < 2 && x.item?.offset < 2);
+  check('Film neu starten wirkt auf YouTube', y.time < 2 && y.item.offset < 2, `${y.time.toFixed(2)} s`);
+  const ytItem = y.item.index;
+  await yt.keyboard.press('n');
+  y = await ytWait((x) => inSync(x) && x.item.index === (ytItem + 1) % 3);
+  check('nächster Film wirkt auf YouTube', y.item.index === (ytItem + 1) % 3 && inSync(y), `Video ${y.id}`);
+
+  // Filmende: weiter zum nächsten Video
+  const beforeEnd = y.item.index;
+  await yt.evaluate(() => {
+    const p = window.tv.player;
+    const loc = p.locateNow();
+    p.seekBy(loc.item.duration - loc.offset - 2.5);
+  });
+  y = await ytWait((x) => inSync(x) && x.item.index === (beforeEnd + 1) % 3, 20000);
+  check('nach dem Ende eines YouTube-Videos läuft das nächste', y.item.index === (beforeEnd + 1) % 3 && !y.paused, `Video ${y.id}`);
+
+  // zurück zu einem eigenen Film und wieder zu YouTube
+  await yt.keyboard.press('1');
+  y = await ytWait((x) => !x.ytMode && x.idle && !x.switching && x.source === 'video');
+  check('Wechsel zu einem eigenen Film blendet YouTube aus und hält es an', !y.ytMode && y.source === 'video' && y.paused);
+  const ytLeft = Date.now();
+  await sleep(2000);
+  await yt.keyboard.press('7');
+  y = await ytWait(inSync);
+  check('YouTube-Sender lief im Hintergrund weiter', inSync(y) && Date.now() - ytLeft > 2000, y.item ? `Stelle ${y.item.position.toFixed(1)} s` : '');
+
+  // nicht abspielbare Videos werden übersprungen
+  await yt.keyboard.press('8');
+  y = await ytWait((x) => x.ytMode && x.idle && !x.switching && !x.paused && x.id === 'BBBBBBBBBBB', 30000);
+  check('gesperrte und gelöschte YouTube-Videos werden übersprungen', y.id === 'BBBBBBBBBBB' && !y.paused && !y.fault, `läuft: ${y.id}`);
+  check('ungültige Adresse wird gemeldet', y.missing === 1, `${y.missing}`);
+
+  // Aus- und Einschalten
+  await yt.keyboard.press('p');
+  y = await ytWait((x) => x.paused);
+  check('Ausschalten hält YouTube an', y.paused);
+  await yt.keyboard.press('p');
+  y = await ytWait((x) => x.ytMode && !x.paused && x.id === 'BBBBBBBBBBB', 20000);
+  check('Einschalten startet YouTube wieder', !y.paused && y.ytMode);
+  check('keine Skriptfehler bei YouTube-Sendern', ytErrors.length === 0, ytErrors.join(' | '));
+  await yt.close();
+  await fetch(`${base}/api/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reset: true }) });
 
   // Berührungsbildschirm (Handy, Besucher-Display): Wischen und langes Drücken
   // (die erste Anzeige wird dafür geschlossen, sonst ist der Testrechner für eine zügige Wischbewegung zu langsam)

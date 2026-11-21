@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { isPlainObject, readLooseJsonFile } from './config.js';
 
-export const VIDEO_EXTENSIONS = new Set(['.mp4', '.m4v', '.webm', '.mov', '.mkv', '.ogv']);
+export const VIDEO_EXTENSIONS = new Set(['.mp4', '.m4v', '.webm', '.mov', '.mkv', '.ogv', '.3gp']);
 
-const CHANNEL_TYPES = new Set(['video', 'testcard', 'noise']);
+const CHANNEL_TYPES = new Set(['video', 'testcard', 'noise', 'youtube']);
 const naturalCompare = (a, b) => a.localeCompare(b, 'de', { numeric: true, sensitivity: 'base' });
 
 /** "01-hessentag_dreieich" -> "Hessentag Dreieich" */
@@ -98,4 +98,28 @@ export function scanMedia(mediaDir) {
     channels.push({ id: '_testbild', folder: '', name: 'Testbild', type: 'testcard', options: {}, files: [] });
   }
   return { channels, warnings };
+}
+
+/**
+ * Hängt die YouTube-Sender aus den Einstellungen ("youtube.channels") an die Senderliste an.
+ * Die Adressen wertet die Anzeige aus; hier werden sie nur durchgereicht.
+ */
+export function addYouTubeChannels(scan, settings) {
+  const list = Array.isArray(settings?.youtube?.channels) ? settings.youtube.channels : [];
+  const extra = [];
+  list.forEach((entry, index) => {
+    if (!isPlainObject(entry) || !Array.isArray(entry.urls)) return;
+    const urls = entry.urls.filter((u) => typeof u === 'string' && u.trim()).map((u) => u.trim());
+    if (!urls.length) return;
+    const id = typeof entry.id === 'string' && entry.id ? entry.id : `yt-${index + 1}`;
+    const name = typeof entry.name === 'string' && entry.name.trim() ? entry.name.trim() : `YouTube ${index + 1}`;
+    const options = { urls };
+    if (entry.blackWhite) options.blackWhite = true;
+    if (typeof entry.fit === 'string') options.fit = entry.fit;
+    extra.push({ id, folder: '', name, type: 'youtube', options, files: [] });
+  });
+  if (!extra.length) return scan;
+  // das Ersatz-Testbild wird nur gebraucht, wenn es sonst gar keinen Sender gibt
+  const channels = scan.channels.filter((c) => c.id !== '_testbild');
+  return { ...scan, channels: [...channels, ...extra] };
 }

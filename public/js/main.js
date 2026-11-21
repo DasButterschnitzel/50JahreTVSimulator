@@ -1,6 +1,8 @@
 // Hauptprogramm der Anzeige.
 import { BroadcastClock } from './broadcast.js';
-import { Renderer } from './renderer.js';
+import { Renderer, computeTubeRect } from './renderer.js';
+import { Overlay } from './overlay.js';
+import { YouTubeDeck } from './youtube.js';
 import { Director } from './director.js';
 import { AudioEngine } from './audio.js';
 import { Player } from './player.js';
@@ -101,6 +103,8 @@ async function measureChannels(channels) {
       if (cache[key] > 0) {
         file.duration = cache[key];
         fresh[key] = cache[key];
+      } else if (file.duration > 0) {
+        // Länge kommt schon vom Server (Mediathek des Android-Geräts); der Player berichtigt sie bei Bedarf
       } else {
         queue.push(file);
       }
@@ -174,6 +178,7 @@ function makeView(renderer) {
       return renderer.source;
     },
     setSource(source, options) {
+      hideYouTube();
       renderer.setSource(source, options);
       if (!app.plain) return;
       for (const child of plainBox.children) child.classList.remove('shown');
@@ -185,7 +190,27 @@ function makeView(renderer) {
     markSourceDirty() {
       renderer.markSourceDirty();
     },
+    /** YouTube-Sender: Player einblenden, Effektschicht darüber. */
+    showYouTube(ch) {
+      app.youtubeChannel = ch;
+      app.overlay.init();
+      document.body.classList.add('yt');
+      layoutYouTube();
+    },
   };
+}
+
+function hideYouTube() {
+  if (!app.youtubeChannel) return;
+  app.youtubeChannel = null;
+  document.body.classList.remove('yt');
+}
+
+function layoutYouTube() {
+  const ch = app.youtubeChannel;
+  if (!ch) return;
+  const rect = computeTubeRect(app.settings.screen, window.innerWidth, window.innerHeight);
+  app.youtube.layout(rect, app.settings, { fit: ch.options?.fit, blackWhite: !!ch.options?.blackWhite });
 }
 
 async function boot() {
@@ -207,7 +232,17 @@ async function boot() {
     log.error('Keine Grafikbeschleunigung (WebGL) verfügbar – Notbetrieb ohne Röhreneffekte.');
   }
 
+  app.overlay = new Overlay($('overlay'), app.settings, log);
+  app.youtube = new YouTubeDeck({
+    container: $('yt'),
+    log,
+    onEnded: (media) => app.player.onEnded(media),
+    onError: (err) => app.player.onMediaError(err),
+  });
+  app.youtube.setVolume(app.settings.audio.volume, app.settings.audio.muted);
+
   app.player = new Player({
+    youtube: app.youtube,
     settings: app.settings,
     clock: app.clock,
     view: makeView(app.renderer),
@@ -228,7 +263,10 @@ async function boot() {
     window.addEventListener(ev, unlockAudio, true);
   }
 
-  window.addEventListener('resize', () => app.renderer.resize());
+  window.addEventListener('resize', () => {
+    app.renderer.resize();
+    layoutYouTube();
+  });
   document.addEventListener('visibilitychange', () => {
     const hidden = document.visibilityState === 'hidden';
     app.player.setSuspended(hidden);
@@ -267,8 +305,8 @@ async function boot() {
   setInterval(() => rescan(false), 120000);
   keepAwake();
   if (app.platform === 'android') {
-    const noFilms = config.channels.every((c) => c.type !== 'video');
-    showTip(noFilms ? 'Noch keine Filme: lange drücken und „Filmordner wählen“ – Wischen wechselt den Sender' : 'Wischen: Sender wechseln · lange drücken: Einstellungen', noFilms ? 20000 : 7000);
+    const noFilms = config.channels.every((c) => c.type !== 'video' && c.type !== 'youtube');
+    showTip(noFilms ? 'Noch keine Filme: lange drücken und unter „Filme“ Videos auswählen' : 'Wischen: Sender wechseln · lange drücken: Einstellungen', noFilms ? 20000 : 7000);
   }
   sendStatus();
   window.tv = app; // für Fehlersuche in der Browserkonsole
@@ -289,7 +327,8 @@ function frame(now) {
   const dt = Math.max(0, (now - lastFrame) / 1000);
   lastFrame = now;
   const dyn = app.director.update(dt);
-  app.renderer.render(now / 1000, dyn, dt);
+  if (app.youtubeChannel) app.overlay.render(now / 1000, dyn);
+  else app.renderer.render(now / 1000, dyn, dt);
   fpsFrames++;
   if (now - fpsSince >= 1000) {
     app.fps = Math.round((fpsFrames * 1000) / (now - fpsSince));
@@ -311,6 +350,9 @@ function patchSettings(patch) {
 function applySettings(settings) {
   app.settings = settings;
   app.renderer.applySettings(settings);
+  app.overlay.applySettings(settings);
+  app.youtube.setVolume(settings.audio.volume, settings.audio.muted);
+  layoutYouTube();
   app.director.applySettings(settings);
   app.audio.applySettings(settings);
   app.player.applySettings(settings);
@@ -409,7 +451,7 @@ function showTip(text, ms) {
 
 function updateHint() {
   const hint = $('hint');
-  const blocked = (app.player.needsGesture || (app.audio.ok && !app.audio.running)) && app.player.powered && document.visibilityState !== 'hidden';
+  const blocked = (app.player.needsGesture || app.youtube.blocked || (app.audio.ok && !app.audio.running)) && app.player.powered && document.visibilityState !== 'hidden';
   const text = blocked ? 'Ton ist vom Browser gesperrt – bitte eine Taste drücken, klicken oder tippen.' : Date.now() < tip.until ? tip.text : '';
   hint.textContent = text;
   hint.classList.toggle('shown', !!text);
@@ -510,7 +552,7 @@ function currentStatus() {
     plain: app.plain,
     volume: app.settings.audio.volume,
     muted: !!app.settings.audio.muted,
-    audioBlocked: app.player.needsGesture || (app.audio.ok && !app.audio.running),
+    audioBlocked: app.player.needsGesture || app.youtube.blocked || (app.audio.ok && !app.audio.running),
     warnings: app.warnings,
     errors: errors.slice(-5),
   };

@@ -4,12 +4,10 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
-import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
 import android.provider.DocumentsContract.Document;
 
 import java.io.ByteArrayOutputStream;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -119,51 +117,7 @@ final class SafMediaSource implements MediaSource {
             ids.remove(path);
             return null;
         }
-        final long length = size;
-        final long lastModified = modified;
-        return new Media() {
-            @Override
-            public long length() {
-                return length;
-            }
-
-            @Override
-            public long lastModified() {
-                return lastModified;
-            }
-
-            @Override
-            public InputStream stream(long start) throws IOException {
-                ParcelFileDescriptor descriptor;
-                try {
-                    descriptor = resolver.openFileDescriptor(uri, "r");
-                } catch (SecurityException | IllegalArgumentException e) {
-                    throw new IOException(e.getMessage());
-                }
-                if (descriptor == null) throw new IOException("Datei nicht lesbar");
-                FileInputStream in = new ParcelFileDescriptor.AutoCloseInputStream(descriptor);
-                try {
-                    if (start > 0) {
-                        try {
-                            in.getChannel().position(start);
-                        } catch (IOException notSeekable) {
-                            // z. B. manche USB-Anbieter: bis zur Stelle vorlesen
-                            long left = start;
-                            byte[] skip = new byte[64 * 1024];
-                            while (left > 0) {
-                                int n = in.read(skip, 0, (int) Math.min(skip.length, left));
-                                if (n < 0) break;
-                                left -= n;
-                            }
-                        }
-                    }
-                } catch (IOException e) {
-                    in.close();
-                    throw e;
-                }
-                return in;
-            }
-        };
+        return new UriMedia(resolver, uri, size, modified);
     }
 
     @Override

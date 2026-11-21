@@ -5,6 +5,11 @@
     <!-- Die Anzeige spricht mit dem eingebauten Server über das Netzwerk des eigenen Geräts. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Videos aus der Mediathek des Geräts als Sender (wird erst erfragt, wenn der Benutzer Alben auswählt). -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
 

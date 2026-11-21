@@ -2,9 +2,38 @@
 <resources>
     <string name="app_name">TV 1977</string>
     <string name="back_again">Zum Beenden noch einmal „Zurück“ drücken</string>
-    <string name="no_picker">Dieses Gerät hat keine Ordnerauswahl. Bitte den App-Ordner benutzen.</string>
+    <string name="no_picker">Dieses Gerät hat keine Auswahl dafür. Bitte die Filme in den Ordner der App kopieren.</string>
     <string name="folder_failed">Der Ordner konnte nicht geöffnet werden.</string>
     <string name="server_failed">Der TV-Simulator konnte nicht gestartet werden:\n%1$s</string>
+    <string name="close">Schließen</string>
+    <string name="sources_title">Woher sollen die Filme kommen?</string>
+    <string name="source_albums">Alben vom Gerät (Kamera, Downloads …)</string>
+    <string name="source_videos">Einzelne Videos auswählen (auch Google Fotos)</string>
+    <string name="source_folder">Ordner mit Sendern (USB-Stick, SD-Karte)</string>
+    <string name="source_reset">Alles zurücksetzen</string>
+    <string name="albums_title">Welche Alben sollen Sender werden?</string>
+    <string name="albums_empty">Auf diesem Gerät wurden keine Videos gefunden.</string>
+    <string name="albums_empty_partial">Unter den freigegebenen Videos wurde keines gefunden. Mit „Weitere freigeben“ lässt sich die Auswahl erweitern.</string>
+    <string name="album_unnamed">Ohne Namen</string>
+    <plurals name="album_label">
+        <item quantity="one">%1$s (%2$d Video)</item>
+        <item quantity="other">%1$s (%2$d Videos)</item>
+    </plurals>
+    <string name="picked_album">Meine Auswahl</string>
+    <string name="picks_temporary">Einige Videos sind nur bis zum nächsten Neustart des Geräts freigegeben.</string>
+    <string name="permission_title">Zugriff auf Videos</string>
+    <string name="permission_denied">Ohne die Erlaubnis kann die App die Alben des Geräts nicht lesen. Einzelne Videos lassen sich auch ohne diese Erlaubnis auswählen.</string>
+    <string name="permission_retry">Erneut fragen</string>
+    <string name="permission_settings">App-Einstellungen öffnen</string>
+    <string name="permission_more">Weitere freigeben</string>
+    <string name="info_albums">Alben: %1$s</string>
+    <string name="info_albums_blocked">Alben: %1$s (Zugriff auf Videos fehlt)</string>
+    <plurals name="info_picks">
+        <item quantity="one">Auswahl: %1$d Video</item>
+        <item quantity="other">Auswahl: %1$d Videos</item>
+    </plurals>
+    <string name="info_folder">Ordner: %1$s</string>
+    <string name="info_none">Noch nichts ausgewählt</string>
     <string name="storage_internal">Interner Speicher</string>
     <string name="storage_card">Speicherkarte/USB</string>
 </resources>

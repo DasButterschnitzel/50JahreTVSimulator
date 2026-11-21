@@ -78,6 +78,14 @@
     "testTone": 0.0, // 1-kHz-Ton auf dem Testbild
   },
 
+  // YouTube-Sender: Videos oder Playlists von YouTube als Programm (braucht Internet).
+  // Lassen sich auch in der Fernbedienung anlegen. Beispiel:
+  //   "channels": [{ "name": "Hessenschau", "urls": ["https://www.youtube.com/watch?v=...", "https://www.youtube.com/playlist?list=..."] }]
+  "youtube": {
+    "channels": [],
+    "warp": true, // Wölbung auch auf das YouTube-Bild anwenden (kostet etwas Leistung)
+  },
+
   "testcard": {
     "title": "DREIEICH",
     "subtitle": "TESTBILD",

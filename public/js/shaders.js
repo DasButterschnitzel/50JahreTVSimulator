@@ -5,6 +5,9 @@
 //                Geisterbild, Durchlaufen des Bildes, Schnee, Nachleuchten
 //   2. BLUR    – weichgezeichnete Kopie für das Überstrahlen
 //   3. TUBE    – Bildröhre: Wölbung, Zeilen, Lochmaske, Glas, Ein-/Ausschalten
+//
+// OVERLAY ist die Röhre ohne eigenes Bild: eine durchsichtige Schicht, die über dem
+// YouTube-Player liegt (dessen Bild sich nicht in den Shader holen lässt).
 
 const PRECISION = `
 #ifdef GL_FRAGMENT_PRECISION_HIGH
@@ -19,6 +22,43 @@ float hash12(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
   p3 += dot(p3, p3.yzx + 33.33);
   return fract((p3.x + p3.y) * p3.z);
+}
+`;
+
+const MASK = `
+vec3 maskAt(vec2 fc) {
+  if (uMask <= 0.0 || uMaskType < 0.5) return vec3(1.0);
+  vec2 m = floor(fc / uMaskScale);
+  float dark = 1.0 - uMask;
+  vec3 res;
+  if (uMaskType > 2.5) {
+    // Lochmaske mit versetzten Punkten (Delta-Röhre)
+    float x = mod(m.x + floor(m.y * 0.5) * 3.0, 6.0);
+    res = x < 2.0 ? vec3(1.0, dark, dark) : (x < 4.0 ? vec3(dark, 1.0, dark) : vec3(dark, dark, 1.0));
+  } else {
+    float x = mod(m.x, 3.0);
+    res = x < 0.5 ? vec3(1.0, dark, dark) : (x < 1.5 ? vec3(dark, 1.0, dark) : vec3(dark, dark, 1.0));
+    if (uMaskType > 1.5) {
+      // Schlitzmaske (Inline-Röhre): senkrechte Schlitze mit Stegen
+      float tri = floor(m.x / 3.0);
+      float row = mod(m.y + mod(tri, 2.0) * 2.0, 4.0);
+      if (row < 1.0) res *= 1.0 - 0.6 * uMask;
+    }
+  }
+  return res / (1.0 - uMask * 0.5);
+}
+`;
+
+const SNOW = `
+float snow(vec2 fc) {
+  vec2 g = floor(fc * vec2(0.5, 0.5));
+  vec2 s = uSeed * vec2(91.7, 13.3);
+  float a = hash12(g + s);
+  float b = hash12(g + vec2(1.0, 0.0) + s);
+  float v = mix(a, b, 0.35);
+  v = smoothstep(0.22, 0.95, v);
+  v *= 0.78 + 0.22 * sin(fc.y * 0.05 + uTime * 11.0);
+  return v * 0.92 + 0.03;
 }
 `;
 
@@ -71,17 +111,7 @@ vec2 chromaOf(vec3 c) {
   return vec2((c.b - y) * 0.493, (c.r - y) * 0.877);
 }
 
-float snow(vec2 fc) {
-  vec2 g = floor(fc * vec2(0.5, 0.5));
-  vec2 s = uSeed * vec2(91.7, 13.3);
-  float a = hash12(g + s);
-  float b = hash12(g + vec2(1.0, 0.0) + s);
-  float v = mix(a, b, 0.35);
-  v = smoothstep(0.22, 0.95, v);
-  v *= 0.78 + 0.22 * sin(fc.y * 0.05 + uTime * 11.0);
-  return v * 0.92 + 0.03;
-}
-
+${SNOW}
 void main() {
   vec2 uv = vUv;
   vec2 fc = gl_FragCoord.xy;
@@ -185,28 +215,7 @@ uniform float uDot;
 uniform float uSeed;
 uniform vec3 uBg;
 ${HASH}
-vec3 maskAt(vec2 fc) {
-  if (uMask <= 0.0 || uMaskType < 0.5) return vec3(1.0);
-  vec2 m = floor(fc / uMaskScale);
-  float dark = 1.0 - uMask;
-  vec3 res;
-  if (uMaskType > 2.5) {
-    // Lochmaske mit versetzten Punkten (Delta-Röhre)
-    float x = mod(m.x + floor(m.y * 0.5) * 3.0, 6.0);
-    res = x < 2.0 ? vec3(1.0, dark, dark) : (x < 4.0 ? vec3(dark, 1.0, dark) : vec3(dark, dark, 1.0));
-  } else {
-    float x = mod(m.x, 3.0);
-    res = x < 0.5 ? vec3(1.0, dark, dark) : (x < 1.5 ? vec3(dark, 1.0, dark) : vec3(dark, dark, 1.0));
-    if (uMaskType > 1.5) {
-      // Schlitzmaske (Inline-Röhre): senkrechte Schlitze mit Stegen
-      float tri = floor(m.x / 3.0);
-      float row = mod(m.y + mod(tri, 2.0) * 2.0, 4.0);
-      if (row < 1.0) res *= 1.0 - 0.6 * uMask;
-    }
-  }
-  return res / (1.0 - uMask * 0.5);
-}
-
+${MASK}
 void main() {
   vec2 d = gl_FragCoord.xy - uCenter;
   d = vec2(d.x * uRot.x - d.y * uRot.y, d.x * uRot.y + d.y * uRot.x);
@@ -276,5 +285,98 @@ void main() {
   col = sqrt(clamp(col, 0.0, 1.0));
   col += (hash12(gl_FragCoord.xy + uSeed * 17.0) - 0.5) / 255.0;
   gl_FragColor = vec4(mix(uBg, col, face), 1.0);
+}
+`;
+
+/**
+ * Effektschicht über dem YouTube-Bild. Ausgabe mit vormultipliziertem Alpha:
+ * rgb = Licht, das hinzukommt (Glas, Rauschen, Schnee), alpha = wie stark das Bild darunter abgedunkelt wird.
+ */
+export const OVERLAY_FRAGMENT = `${PRECISION}
+uniform vec2 uCenter;
+uniform vec2 uHalf;
+uniform vec2 uRot;
+uniform float uLines;
+uniform float uCurv;
+uniform float uCorner;
+uniform float uEdgeShadow;
+uniform float uScan;
+uniform float uMask;
+uniform float uMaskType;
+uniform float uMaskScale;
+uniform float uVignette;
+uniform float uReflect;
+uniform float uAmbient;
+uniform float uGain;
+uniform vec2 uCollapse;
+uniform float uDot;
+uniform float uSeed;
+uniform float uTime;
+uniform float uStatic;
+uniform float uNoise;
+uniform vec3 uBg;
+${HASH}
+${MASK}
+${SNOW}
+void main() {
+  vec2 d = gl_FragCoord.xy - uCenter;
+  d = vec2(d.x * uRot.x - d.y * uRot.y, d.x * uRot.y + d.y * uRot.x);
+  vec2 p = vec2(d.x, -d.y) / uHalf;
+  float aspect = uHalf.x / uHalf.y;
+  vec2 q = p * (1.0 + uCurv * p.yx * p.yx);
+
+  vec2 qa = abs(q) * vec2(aspect, 1.0);
+  vec2 bx = vec2(aspect, 1.0) - uCorner;
+  float sdf = length(max(qa - bx, 0.0)) + min(max(qa.x - bx.x, qa.y - bx.y), 0.0) - uCorner;
+  float pxSize = 1.5 / uHalf.y;
+  float face = 1.0 - smoothstep(-pxSize, pxSize, sdf);
+  if (face <= 0.0) {
+    gl_FragColor = vec4(uBg, 1.0);
+    return;
+  }
+
+  vec2 pc = q / uCollapse;
+  float inPic = step(abs(pc.x), 1.0) * step(abs(pc.y), 1.0);
+  vec2 uv = clamp(pc * 0.5 + 0.5, 0.0, 1.0);
+  // beim Ausschalten fällt das Bild zusammen: darunterliegendes Video ausblenden, Strich und Punkt selbst zeichnen
+  float collapsed = 1.0 - step(0.999, min(uCollapse.x, uCollapse.y));
+
+  // Zeilenstruktur für ein mittelhelles Bild
+  float ly = uv.y * uLines - 0.5;
+  float f = ly - floor(ly);
+  float g = 1.0 - f;
+  float beam = (exp(-(f * f) / 0.1764) + exp(-(g * g) / 0.1764)) * 1.3;
+  float mult = mix(1.0, beam, uScan);
+  mult *= dot(maskAt(gl_FragCoord.xy), vec3(0.3333));
+  float r2 = dot(p, p) * 0.5;
+  mult *= 1.0 - uVignette * r2;
+  mult *= mix(1.0, 0.35 + 0.65 * smoothstep(0.0, -0.07, sdf), uEdgeShadow);
+  mult = clamp(mult, 0.0, 1.0);
+
+  vec3 add = vec3(0.0);
+  // Rauschen
+  float n = hash12(gl_FragCoord.xy + uSeed * vec2(37.0, 17.0));
+  add += vec3(n * n) * uNoise * 0.5;
+  // Leuchtstrich und Leuchtpunkt beim Ausschalten
+  add += vec3(0.75) * collapsed * inPic * min(uGain, 2.0) * 0.5;
+  vec2 qd = q * vec2(aspect, 1.0);
+  add += vec3(0.85, 0.95, 1.0) * uDot * exp(-dot(qd, qd) * 700.0);
+  add *= mult;
+  // Glas
+  vec3 glass = uAmbient * vec3(0.016, 0.019, 0.018) * (1.0 - 0.5 * r2);
+  vec2 g1 = (p - vec2(-0.50, -0.56)) * vec2(1.25, 2.3);
+  vec2 g2 = (p - vec2(0.58, -0.78)) * vec2(2.4, 5.0);
+  glass += uReflect * (exp(-dot(g1, g1)) * 0.035 + exp(-dot(g2, g2)) * 0.015) * vec3(1.0, 0.98, 0.93);
+  glass += uReflect * smoothstep(-0.12, 0.0, sdf) * 0.012;
+  add += glass;
+
+  // in Bildschirmwerte umrechnen
+  float m = sqrt(mult);
+  vec3 a = sqrt(clamp(add, 0.0, 1.0));
+  // Anteil des Videos: weg beim Ausschalten, beim Aufwärmen und unter dem Schnee
+  float video = m * inPic * (1.0 - collapsed) * clamp(uGain, 0.0, 1.0) * (1.0 - uStatic);
+  a += vec3(snow(uv * vec2(768.0, 576.0))) * m * uStatic * inPic * (1.0 - collapsed) * clamp(uGain, 0.0, 1.0);
+  a += (hash12(gl_FragCoord.xy + uSeed * 17.0) - 0.5) / 255.0;
+  gl_FragColor = vec4(mix(uBg, clamp(a, 0.0, 1.0), face), mix(1.0, 1.0 - video, face));
 }
 `;

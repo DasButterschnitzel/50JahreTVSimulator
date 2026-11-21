@@ -12,12 +12,19 @@ public interface MediaSource {
         public final boolean directory;
         public final long size;
         public final long lastModified;
+        /** Länge des Films in Sekunden, 0 = unbekannt. */
+        public final double duration;
 
         public Entry(String name, boolean directory, long size, long lastModified) {
+            this(name, directory, size, lastModified, 0);
+        }
+
+        public Entry(String name, boolean directory, long size, long lastModified, double duration) {
             this.name = name;
             this.directory = directory;
             this.size = size;
             this.lastModified = lastModified;
+            this.duration = duration;
         }
     }
 

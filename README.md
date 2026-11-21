@@ -7,6 +7,8 @@ und rechnet das Bild so um, dass es wie auf einer alten Bildröhre aussieht.
 - **Mehrere Sender, die gleichzeitig laufen.** Jeder Ordner mit Filmen ist ein Sender.
   Alle Sender „senden“ weiter, auch wenn gerade ein anderer eingestellt ist – wer
   umschaltet, landet mitten im laufenden Programm.
+- **YouTube-Sender:** Videos und Playlists von YouTube als Programm, mit Effektschicht und
+  derselben Steuerung (siehe [YouTube-Sender](#youtube-sender)).
 - **Röhrensimulation:** gewölbtes Glas mit runden Ecken, Zeilenstruktur, Lochmaske,
   unscharfe PAL-Farben, Rauschen, Geisterbild, Überstrahlen, Nachleuchten, Spiegelung.
   Beim Umschalten rauscht es und das Bild läuft kurz durch; beim Ausschalten fällt es
@@ -25,9 +27,10 @@ Benötigt werden nur [Node.js](https://nodejs.org) (ab Version 18) und ein Brows
 (Chrome, Edge oder Chromium). Keine Internetverbindung im Betrieb nötig.
 
 > **Stand der Erprobung:** Entwickelt und automatisch getestet unter Linux mit Chromium.
-> Auf einem echten Windows-PC, einem echten Raspberry Pi, einem echten Android-Gerät und
-> mit dem Drehregler-Beispiel wurde noch nicht getestet – bitte vor der Ausstellung einen
-> Probelauf über mehrere Tage auf dem Zielgerät einplanen.
+> Auf einem echten Windows-PC, einem echten Raspberry Pi und mit dem Drehregler-Beispiel
+> wurde noch nicht getestet; die Android-App nur kurz auf einem Handy. Die YouTube-Sender
+> sind gegen einen nachgebauten YouTube-Player getestet, nicht gegen das echte YouTube.
+> Bitte vor der Ausstellung einen Probelauf über mehrere Tage auf dem Zielgerät einplanen.
 
 ## Schnellstart
 
@@ -104,9 +107,9 @@ Eine Datei `channel.json` im Ordner des Senders, alle Angaben freiwillig:
 | Angabe | Bedeutung |
 | --- | --- |
 | `name` | Anzeigename in der Fernbedienung |
-| `type` | `"video"` (Standard), `"testcard"` = Testbild, `"noise"` = Sender ohne Signal (Rauschen) |
+| `type` | `"video"` (Standard), `"testcard"` = Testbild, `"noise"` = Sender ohne Signal (Rauschen), `"youtube"` = YouTube-Sender (dazu `"urls"`, siehe unten) |
 | `blackWhite` | `true` = dieser Sender wird schwarz-weiß gezeigt |
-| `fit` | Breitbild-Filme: `"fill"` formatfüllend beschneiden (Standard), `"fit"` ganz zeigen, `"stretch"` verzerren |
+| `fit` | Breitbild-Filme: `"fill"` formatfüllend beschneiden (Standard), `"fit"` ganz zeigen, `"stretch"` verzerren. Hochkant-Videos werden immer ganz gezeigt. |
 | `volume` | Lautstärkeausgleich, 1 = unverändert |
 | `onSwitch` | `"restart"` = der Sender beginnt bei jedem Einschalten von vorn, statt im Hintergrund weiterzulaufen |
 
@@ -124,6 +127,39 @@ scripts/video-umwandeln.sh /pfad/zum/film.mov
 
 Höhere Auflösungen bringen nichts: Das Bild wird ohnehin auf Fernsehauflösung von damals
 heruntergerechnet.
+
+## YouTube-Sender
+
+Ein Sender kann statt eigener Dateien Videos oder Playlists von YouTube zeigen. Anlegen in der
+Fernbedienung unter „YouTube-Sender“ (Name und eine Adresse pro Zeile), oder in `config.json`:
+
+```json
+"youtube": {
+  "channels": [
+    { "name": "Hessenschau", "urls": ["https://www.youtube.com/watch?v=…", "https://www.youtube.com/playlist?list=…"] }
+  ]
+}
+```
+
+Auch ein Ordner in `media` kann ein YouTube-Sender sein und steht dann an der Stelle seines
+Ordnernamens: `channel.json` mit `{ "type": "youtube", "urls": ["…"] }`.
+
+- **Steuerung wie bei eigenen Filmen:** Pause, Film neu starten, nächster/vorheriger Film,
+  Springen, Lautstärke. Die Videos laufen nacheinander in Endlosschleife und im Hintergrund
+  weiter. Die Länge eines Videos lernt der Player beim ersten Abspielen; bis dahin rechnet die
+  Sendeuhr mit einem Schätzwert. Eine Live-Übertragung läuft einfach live.
+- **Effekte:** Das Bild von YouTube lässt sich technisch nicht durch die Röhrensimulation
+  schicken. Stattdessen liegen Röhrenform, Zeilen, Maske, Glas, Rauschen sowie das Rauschen beim
+  Umschalten und die Ein-/Ausschaltanimation als Schicht darüber; Wölbung und Farbe wirken direkt
+  auf das Bild. Farbunschärfe, Geisterbild, Nachleuchten und der Lautsprecherklang gibt es nur
+  für eigene Dateien. Breitbild wird wie bei eigenen Filmen formatfüllend beschnitten.
+- **Voraussetzungen und Grenzen:** Internetverbindung am Ausstellungsort; YouTube kann Werbung
+  einblenden; Videos, deren Besitzer das Einbetten verbieten, sowie gelöschte oder private
+  Videos werden übersprungen (die Fernbedienung meldet es). Automatischer Start mit Ton
+  funktioniert im Kioskmodus (Startskript) und in der Android-App. Wer die volle Simulation und
+  einen Betrieb ohne Internet braucht, nimmt eigene Filmdateien.
+- Ruckelt ein YouTube-Sender, in der Fernbedienung unter „Bild → Umschalten und Leistung“ die
+  „Wölbung auch für das YouTube-Bild“ abschalten.
 
 ## Bedienung
 
@@ -199,10 +235,23 @@ dabei einmal nach der Erlaubnis, Apps aus dieser Quelle zu installieren.
 Eine per USB angeschlossene Tastatur oder ein Drehregler funktioniert wie am PC. Für
 Besucher-Displays lässt sich das lange Drücken abschalten (`"input": { "touchMenu": false }`).
 
-**Filme:** Lange drücken → „Filmordner wählen“ und einen Ordner auf dem Gerät, der SD-Karte
-oder einem USB-Stick freigeben. Darin gilt dieselbe Ordnerstruktur wie oben (Unterordner =
-Sender). Alternativ die Filme in den Ordner der App kopieren; die Einstellungen zeigen den
-genauen Pfad. Eine `config.json` wird, falls vorhanden, aus dem Filmordner gelesen.
+**Filme:** Beim ersten Start fragt die App, woher die Filme kommen sollen; später geht es über
+lange drücken → „Filme“. Es gibt drei Wege, die sich kombinieren lassen:
+
+- **Alben vom Gerät** – Kamera, Downloads, WhatsApp usw., also alles, was auch Google Fotos
+  unter „Auf dem Gerät“ zeigt. Android fragt dafür einmal nach dem Zugriff auf Videos; danach
+  wird jedes angekreuzte Album ein Sender. Ab Android 14 lässt sich der Zugriff auch auf
+  einzelne Videos beschränken.
+- **Einzelne Videos** – öffnet die Auswahl des Systems, in der auch Videos aus Google Fotos
+  (auch nur in der Cloud gespeicherte) erscheinen. Dafür ist keine Berechtigung nötig. Die
+  gewählten Videos bilden den Sender „Meine Auswahl“; weitere Auswahlen werden angehängt.
+- **Ordner mit Sendern** – ein Ordner auf dem Gerät, der SD-Karte oder einem USB-Stick mit
+  derselben Struktur wie oben (Unterordner = Sender). Eine `config.json` wird, falls vorhanden,
+  aus diesem Ordner gelesen.
+
+Zusätzlich liest die App immer ihren eigenen Ordner (Pfad steht in den Einstellungen).
+Hochkant gefilmte Videos werden ganz gezeigt statt beschnitten. YouTube-Sender funktionieren
+in der App wie am PC.
 
 **Fernbedienung von einem anderen Gerät:** in dieser `config.json` `"server": { "host": "0.0.0.0", "pin": "…" }`
 eintragen, App neu starten, dann `http://<Adresse des Geräts>:7777/admin` aufrufen.
@@ -275,8 +324,8 @@ legt nichts lahm – die Datei wird dann ignoriert und die Fernbedienung zeigt e
 - `server.js`, `server/` – kleiner Webserver ohne Abhängigkeiten: liefert Anzeige und Filme
   aus, speichert Einstellungen, startet und überwacht den Browser (`--kiosk`).
 - `public/` – die Anzeige (WebGL): `shaders.js` Röhrensimulation, `broadcast.js` Sendeuhr,
-  `player.js` Wiedergabe und Fehlerbehandlung, `director.js` Animationen, `audio.js` Ton;
-  `admin.*` Fernbedienung.
+  `player.js` Wiedergabe und Fehlerbehandlung, `director.js` Animationen, `audio.js` Ton,
+  `youtube.js` und `overlay.js` YouTube-Sender und ihre Effektschicht; `admin.*` Fernbedienung.
 - `android/` – die Android-App: eine WebView mit derselben Anzeige und ein eingebauter Server
   in Java (`…/server/`), der sich nach außen wie `server.js` verhält. Die Anzeige wird beim
   Bauen aus `public/` in die App gepackt, die Standardwerte aus `server/defaults.jsonc`.
