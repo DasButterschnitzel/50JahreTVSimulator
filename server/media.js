@@ -100,24 +100,32 @@ export function scanMedia(mediaDir) {
   return { channels, warnings };
 }
 
-/**
- * Hängt die YouTube-Sender aus den Einstellungen ("youtube.channels") an die Senderliste an.
- * Die Adressen wertet die Anzeige aus; hier werden sie nur durchgereicht.
- */
-export function addYouTubeChannels(scan, settings) {
-  const list = Array.isArray(settings?.youtube?.channels) ? settings.youtube.channels : [];
-  const extra = [];
-  list.forEach((entry, index) => {
+function onlineEntries(list, prefix, build) {
+  const out = [];
+  (Array.isArray(list) ? list : []).forEach((entry, index) => {
     if (!isPlainObject(entry) || !Array.isArray(entry.urls)) return;
     const urls = entry.urls.filter((u) => typeof u === 'string' && u.trim()).map((u) => u.trim());
     if (!urls.length) return;
-    const id = typeof entry.id === 'string' && entry.id ? entry.id : `yt-${index + 1}`;
-    const name = typeof entry.name === 'string' && entry.name.trim() ? entry.name.trim() : `YouTube ${index + 1}`;
+    const id = typeof entry.id === 'string' && entry.id ? entry.id : `${prefix}-${index + 1}`;
+    const name = typeof entry.name === 'string' && entry.name.trim() ? entry.name.trim() : `${prefix === 'yt' ? 'YouTube' : 'Internet'} ${index + 1}`;
     const options = { urls };
     if (entry.blackWhite) options.blackWhite = true;
     if (typeof entry.fit === 'string') options.fit = entry.fit;
-    extra.push({ id, folder: '', name, type: 'youtube', options, files: [] });
+    out.push(build(id, name, options));
   });
+  return out;
+}
+
+/**
+ * Hängt die Sender aus den Einstellungen an die Senderliste an: Internet-Sender ("web.channels",
+ * Filme von archive.org oder direkte Videoadressen) und YouTube-Sender ("youtube.channels").
+ * Die Adressen wertet die Anzeige aus; hier werden sie nur durchgereicht.
+ */
+export function addOnlineChannels(scan, settings) {
+  const extra = [
+    ...onlineEntries(settings?.web?.channels, 'web', (id, name, options) => ({ id, folder: '', name, type: 'video', remote: true, options, files: [] })),
+    ...onlineEntries(settings?.youtube?.channels, 'yt', (id, name, options) => ({ id, folder: '', name, type: 'youtube', options, files: [] })),
+  ];
   if (!extra.length) return scan;
   // das Ersatz-Testbild wird nur gebraucht, wenn es sonst gar keinen Sender gibt
   const channels = scan.channels.filter((c) => c.id !== '_testbild');

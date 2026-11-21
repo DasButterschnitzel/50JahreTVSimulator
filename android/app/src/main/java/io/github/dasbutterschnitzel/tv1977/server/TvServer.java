@@ -195,7 +195,7 @@ public final class TvServer implements HttpServer.Handler {
     }
 
     private Map<String, Object> configPayload() {
-        MediaScanner.Result scan = MediaScanner.addYouTubeChannels(MediaScanner.scan(media), store.settings());
+        MediaScanner.Result scan = MediaScanner.addOnlineChannels(MediaScanner.scan(media), store.settings());
         List<Object> warnings = store.warnings();
         warnings.addAll(scan.warnings);
         Map<String, Object> payload = new LinkedHashMap<>();
@@ -223,7 +223,7 @@ public final class TvServer implements HttpServer.Handler {
                     json(res, 200, configPayload());
                     return;
                 case "/api/channels":
-                    json(res, 200, MediaScanner.addYouTubeChannels(MediaScanner.scan(media), store.settings()).toJson());
+                    json(res, 200, MediaScanner.addOnlineChannels(MediaScanner.scan(media), store.settings()).toJson());
                     return;
                 case "/api/status": {
                     long at = lastStatusAt;

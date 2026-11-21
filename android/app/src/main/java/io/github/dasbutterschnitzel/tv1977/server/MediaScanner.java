@@ -118,14 +118,8 @@ public final class MediaScanner {
         return Json.object("id", id, "folder", folder, "name", name, "type", type, "options", options, "files", files);
     }
 
-    /**
-     * Hängt die YouTube-Sender aus den Einstellungen ("youtube.channels") an die Senderliste an.
-     * Die Adressen wertet die Anzeige aus; hier werden sie nur durchgereicht.
-     */
-    public static Result addYouTubeChannels(Result scan, Map<String, Object> settings) {
-        Object list = Json.asObject(settings.get("youtube")) == null ? null : Json.asObject(settings.get("youtube")).get("channels");
-        if (!(list instanceof List)) return scan;
-        List<Object> extra = new ArrayList<>();
+    private static void onlineEntries(Object list, String prefix, String type, boolean remote, List<Object> out) {
+        if (!(list instanceof List)) return;
         int index = 0;
         for (Object item : (List<?>) list) {
             index++;
@@ -137,14 +131,32 @@ public final class MediaScanner {
             }
             if (urls.isEmpty()) continue;
             String id = Json.string(entry, "id", "");
-            if (id.isEmpty()) id = "yt-" + index;
+            if (id.isEmpty()) id = prefix + "-" + index;
             String name = Json.string(entry, "name", "").trim();
-            if (name.isEmpty()) name = "YouTube " + index;
+            if (name.isEmpty()) name = (prefix.equals("yt") ? "YouTube " : "Internet ") + index;
             Map<String, Object> options = Json.object("urls", urls);
             if (Boolean.TRUE.equals(entry.get("blackWhite"))) options.put("blackWhite", true);
             if (entry.get("fit") instanceof String) options.put("fit", entry.get("fit"));
-            extra.add(channel(id, "", name, "youtube", options, new ArrayList<Object>()));
+            Map<String, Object> channel = channel(id, "", name, type, options, new ArrayList<Object>());
+            if (remote) channel.put("remote", true);
+            out.add(channel);
         }
+    }
+
+    private static Object listOf(Map<String, Object> settings, String section) {
+        Map<String, Object> map = Json.asObject(settings.get(section));
+        return map == null ? null : map.get("channels");
+    }
+
+    /**
+     * Hängt die Sender aus den Einstellungen an die Senderliste an: Internet-Sender ("web.channels",
+     * Filme von archive.org oder direkte Videoadressen) und YouTube-Sender ("youtube.channels").
+     * Die Adressen wertet die Anzeige aus; hier werden sie nur durchgereicht.
+     */
+    public static Result addOnlineChannels(Result scan, Map<String, Object> settings) {
+        List<Object> extra = new ArrayList<>();
+        onlineEntries(listOf(settings, "web"), "web", "video", true, extra);
+        onlineEntries(listOf(settings, "youtube"), "yt", "youtube", false, extra);
         if (extra.isEmpty()) return scan;
         // das Ersatz-Testbild wird nur gebraucht, wenn es sonst gar keinen Sender gibt
         Result result = new Result();

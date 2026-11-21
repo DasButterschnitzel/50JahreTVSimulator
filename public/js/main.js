@@ -3,6 +3,7 @@ import { BroadcastClock } from './broadcast.js';
 import { Renderer, computeTubeRect } from './renderer.js';
 import { Overlay } from './overlay.js';
 import { YouTubeDeck } from './youtube.js';
+import { resolveWebChannel, applyHiddenFiles } from './online.js';
 import { Director } from './director.js';
 import { AudioEngine } from './audio.js';
 import { Player } from './player.js';
@@ -126,6 +127,20 @@ async function measureChannels(channels) {
   writeDurationCache(fresh);
   return channels;
 }
+
+/**
+ * Macht aus der Senderliste des Servers das Programm: Internet-Sender auflösen,
+ * abgewählte Filme entfernen, Filmlängen ermitteln.
+ */
+async function prepareChannels(list) {
+  await Promise.all(list.filter((c) => c.remote).map((c) => resolveWebChannel(c, log)));
+  let channels = applyHiddenFiles(list, app.settings.hiddenFiles);
+  if (!channels.length) channels = [{ id: '_testbild', folder: '', name: 'Testbild', type: 'testcard', options: {}, files: [] }];
+  return measureChannels(channels);
+}
+
+/** Alles, was in den Einstellungen die Senderliste bestimmt. */
+const programSettings = (settings) => JSON.stringify([settings.hiddenFiles, settings.web?.channels, settings.youtube?.channels]);
 
 const channelSignature = (channels) => JSON.stringify(channels.map((c) => [c.id, c.name, c.type, c.options, (c.files || []).map((f) => [f.url, f.size, f.mtime])]));
 
@@ -278,8 +293,8 @@ async function boot() {
   });
 
   // Sender einlesen und einschalten
-  const channels = await measureChannels(config.channels);
-  app.signature = channelSignature(config.channels);
+  app.signature = channelSignature(config.channels) + programSettings(app.settings);
+  const channels = await prepareChannels(config.channels);
   let startId = config.state.channel;
   const start = app.settings.startChannel;
   if (start !== 'last' && Number.isFinite(Number(start))) startId = channels[Math.max(0, Number(start) - 1)]?.id ?? startId;
@@ -348,7 +363,10 @@ function patchSettings(patch) {
 }
 
 function applySettings(settings) {
+  // Geänderte Senderlisten oder Filmauswahl: Programm neu zusammenstellen
+  const programChanged = app.settings && programSettings(settings) !== programSettings(app.settings);
   app.settings = settings;
+  if (programChanged) setTimeout(() => rescan(false), 0);
   app.renderer.applySettings(settings);
   app.overlay.applySettings(settings);
   app.youtube.setVolume(settings.audio.volume, settings.audio.muted);
@@ -496,12 +514,12 @@ async function rescan(force) {
   rescan.busy = true;
   try {
     const data = await request('/api/channels');
-    const signature = channelSignature(data.channels);
+    const signature = channelSignature(data.channels) + programSettings(app.settings);
     app.warnings = data.warnings || [];
     if (!force && signature === app.signature) return;
     const previous = app.player.channel;
     const before = previous ? channelSignature([previous]) : '';
-    const channels = await measureChannels(data.channels);
+    const channels = await prepareChannels(data.channels);
     app.signature = signature;
     app.player.setChannels(channels);
     const current = app.player.channel;

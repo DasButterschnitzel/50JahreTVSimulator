@@ -1,5 +1,7 @@
 // Fernbedienung: steuert die Anzeige über den Server.
 import { parseYouTubeUrl } from './js/youtube.js';
+import { parseWebUrl, resolveWebChannel } from './js/online.js';
+import { PRESETS_1977 } from './js/presets1977.js';
 
 const $ = (id) => document.getElementById(id);
 const PIN_KEY = 'tv77.pin';
@@ -311,71 +313,213 @@ function buildControl(item) {
   return wrap;
 }
 
-// ---------------------------------------------------------------- YouTube-Sender
+// ---------------------------------------------------------------- Internet-Sender (YouTube, archive.org)
 
-function youtubeChannels() {
-  const list = settings?.youtube?.channels;
+const KINDS = { youtube: 'youtube', web: 'web' };
+
+function onlineChannels(kind) {
+  const list = settings?.[kind]?.channels;
   return Array.isArray(list) ? list.filter((c) => c && Array.isArray(c.urls)) : [];
 }
 
-function saveYouTubeChannels(channels) {
-  return api('/api/settings', { patch: { youtube: { channels } } })
-    .then(() => send('rescan'))
-    .catch((err) => alert(err.message));
+function saveOnlineChannels(kind, channels) {
+  return api('/api/settings', { patch: { [kind]: { channels } } }).catch((err) => alert(err.message));
 }
 
-function showYouTubeChannels() {
+function describeUrls(kind, urls) {
+  if (kind === KINDS.youtube) {
+    const lists = urls.filter((u) => parseYouTubeUrl(u)?.playlist).length;
+    const videos = urls.length - lists;
+    return ['YouTube', videos ? `${videos} Video${videos === 1 ? '' : 's'}` : '', lists ? `${lists} Playlist${lists === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ');
+  }
+  const items = urls.filter((u) => parseWebUrl(u)?.archive).length;
+  const files = urls.length - items;
+  return [items ? `archive.org · ${items} Eintr${items === 1 ? 'ag' : 'äge'}` : '', files ? `${files} Datei${files === 1 ? '' : 'en'}` : ''].filter(Boolean).join(' · ');
+}
+
+function showOnlineChannels() {
   const box = $('yt-list');
   box.replaceChildren();
-  for (const channel of youtubeChannels()) {
-    const row = document.createElement('div');
-    row.className = 'entry';
-    const name = document.createElement('span');
-    name.className = 'name';
-    name.textContent = channel.name || 'YouTube';
-    const meta = document.createElement('span');
-    meta.className = 'meta';
-    const lists = channel.urls.filter((u) => parseYouTubeUrl(u)?.playlist).length;
-    const videos = channel.urls.length - lists;
-    meta.textContent = [videos ? `${videos} Video${videos === 1 ? '' : 's'}` : '', lists ? `${lists} Playlist${lists === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ');
-    const remove = document.createElement('button');
-    remove.textContent = 'Entfernen';
-    remove.addEventListener('click', () => {
-      if (confirm(`YouTube-Sender „${channel.name}“ entfernen?`)) saveYouTubeChannels(youtubeChannels().filter((c) => c !== channel));
-    });
-    row.append(name, meta, remove);
-    box.appendChild(row);
+  for (const kind of [KINDS.web, KINDS.youtube]) {
+    for (const channel of onlineChannels(kind)) {
+      const row = document.createElement('div');
+      row.className = 'entry';
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = channel.name || 'Internet-Sender';
+      const meta = document.createElement('span');
+      meta.className = 'meta';
+      meta.textContent = describeUrls(kind, channel.urls);
+      const remove = document.createElement('button');
+      remove.textContent = 'Entfernen';
+      remove.addEventListener('click', () => {
+        if (confirm(`Sender „${channel.name}“ entfernen?`)) saveOnlineChannels(kind, onlineChannels(kind).filter((c) => c !== channel));
+      });
+      row.append(name, meta, remove);
+      box.appendChild(row);
+    }
   }
+  showPresets();
 }
 
-function addYouTubeChannel() {
+function addOnlineChannel() {
   const error = $('yt-error');
   const lines = $('yt-urls')
     .value.split(/[\n,;]+/)
     .map((line) => line.trim())
     .filter(Boolean);
-  const bad = lines.filter((line) => !parseYouTubeUrl(line));
   if (!lines.length) {
-    error.textContent = 'Bitte mindestens eine YouTube-Adresse eintragen.';
+    error.textContent = 'Bitte mindestens eine Adresse eintragen.';
     return;
   }
+  const youtube = lines.filter((line) => parseYouTubeUrl(line));
+  const web = lines.filter((line) => !parseYouTubeUrl(line) && parseWebUrl(line));
+  const bad = lines.filter((line) => !parseYouTubeUrl(line) && !parseWebUrl(line));
   if (bad.length) {
-    error.textContent = `Keine gültige YouTube-Adresse: ${bad.join(', ')}`;
+    error.textContent = `Keine gültige Adresse von YouTube, archive.org oder einer Videodatei: ${bad.join(', ')}`;
+    return;
+  }
+  if (youtube.length && web.length) {
+    error.textContent = 'Bitte YouTube-Adressen und andere Adressen in getrennten Sendern anlegen.';
     return;
   }
   error.textContent = '';
-  const existing = youtubeChannels();
-  const name = $('yt-name').value.trim() || `YouTube ${existing.length + 1}`;
-  const id = `yt-${Date.now().toString(36)}`;
-  saveYouTubeChannels([...existing, { id, name, urls: lines }]).then(() => {
+  const kind = youtube.length ? KINDS.youtube : KINDS.web;
+  const existing = onlineChannels(kind);
+  const name = $('yt-name').value.trim() || `${kind === KINDS.youtube ? 'YouTube' : 'Internet'} ${existing.length + 1}`;
+  const id = `${kind === KINDS.youtube ? 'yt' : 'web'}-${Date.now().toString(36)}`;
+  saveOnlineChannels(kind, [...existing, { id, name, urls: lines }]).then(() => {
     $('yt-name').value = '';
     $('yt-urls').value = '';
   });
 }
 
+/** Fertige Vorschläge mit Material von 1977. */
+function showPresets() {
+  const box = $('presets-1977');
+  box.replaceChildren();
+  for (const preset of PRESETS_1977) {
+    const added = onlineChannels(preset.kind).some((c) => c.id === preset.id);
+    const row = document.createElement('div');
+    row.className = 'entry preset';
+    const text = document.createElement('div');
+    text.className = 'name';
+    const title = document.createElement('b');
+    title.textContent = preset.name;
+    const source = document.createElement('span');
+    source.className = 'meta';
+    source.textContent = preset.kind === KINDS.web ? ' · archive.org · volle Röhrensimulation' : ' · YouTube';
+    const note = document.createElement('div');
+    note.className = 'note';
+    note.textContent = preset.note;
+    text.append(title, source, note);
+    const button = document.createElement('button');
+    button.textContent = added ? 'Hinzugefügt' : 'Hinzufügen';
+    button.disabled = added;
+    button.addEventListener('click', () => {
+      saveOnlineChannels(preset.kind, [...onlineChannels(preset.kind), { id: preset.id, name: preset.name, urls: preset.urls }]);
+    });
+    row.append(text, button);
+    box.appendChild(row);
+  }
+}
+
+// ---------------------------------------------------------------- Filme auswählen
+
+let library = [];
+let libraryKey = '';
+
+function hiddenFiles() {
+  return new Set(Array.isArray(settings?.hiddenFiles) ? settings.hiddenFiles : []);
+}
+
+/** Senderliste mit allen Filmen laden (auch den abgewählten); Internet-Sender werden hier aufgelöst. */
+async function loadLibrary() {
+  try {
+    const data = await api('/api/channels');
+    const channels = data.channels.filter((c) => c.type === 'video');
+    await Promise.all(channels.filter((c) => c.remote).map((c) => resolveWebChannel(c)));
+    library = channels.filter((c) => c.files?.length);
+  } catch {
+    library = [];
+  }
+  showLibrary(true);
+}
+
+function showLibrary(force) {
+  const box = $('library');
+  const hidden = hiddenFiles();
+  const key = JSON.stringify([library.map((c) => [c.id, c.name, c.files.map((f) => f.url)]), [...hidden]]);
+  if (!force && key === libraryKey) return;
+  libraryKey = key;
+  const open = new Set([...box.querySelectorAll('details[open]')].map((d) => d.dataset.id));
+  box.replaceChildren();
+  if (!library.length) {
+    const empty = document.createElement('p');
+    empty.className = 'note';
+    empty.textContent = 'Noch keine Sender mit eigenen Filmen.';
+    box.appendChild(empty);
+    return;
+  }
+  for (const channel of library) {
+    const details = document.createElement('details');
+    details.dataset.id = channel.id;
+    details.open = open.has(channel.id);
+    const shown = channel.files.filter((f) => !hidden.has(f.url)).length;
+    const summary = document.createElement('summary');
+    summary.textContent = `${channel.name} – ${shown} von ${channel.files.length} Film${channel.files.length === 1 ? '' : 'en'}`;
+    details.appendChild(summary);
+
+    const buttons = document.createElement('div');
+    buttons.className = 'row';
+    for (const [label, on] of [
+      ['Alle', true],
+      ['Keine', false],
+    ]) {
+      const button = document.createElement('button');
+      button.textContent = label;
+      button.addEventListener('click', () => {
+        const next = hiddenFiles();
+        for (const file of channel.files) on ? next.delete(file.url) : next.add(file.url);
+        saveHidden(next);
+      });
+      buttons.appendChild(button);
+    }
+    details.appendChild(buttons);
+
+    for (const file of channel.files) {
+      const row = document.createElement('label');
+      row.className = 'film';
+      const box2 = document.createElement('input');
+      box2.type = 'checkbox';
+      box2.checked = !hidden.has(file.url);
+      box2.addEventListener('change', () => {
+        const next = hiddenFiles();
+        box2.checked ? next.delete(file.url) : next.add(file.url);
+        saveHidden(next);
+      });
+      const name = document.createElement('span');
+      name.textContent = file.name;
+      row.append(box2, name);
+      details.appendChild(row);
+    }
+    box.appendChild(details);
+  }
+}
+
+function saveHidden(set) {
+  // nur Einträge behalten, die es noch gibt – sonst wächst die Liste mit jedem gelöschten Film
+  const known = new Set(library.flatMap((c) => c.files.map((f) => f.url)));
+  const list = [...set].filter((url) => known.has(url));
+  settings = { ...settings, hiddenFiles: list };
+  showLibrary(true);
+  setSetting('hiddenFiles', list);
+}
+
 function showSettings() {
   if (!settings) return;
-  showYouTubeChannels();
+  showOnlineChannels();
+  showLibrary(false);
   for (const { item, input, valueEl, type } of controls) {
     if (document.activeElement === input && type !== 'check') continue;
     const value = getPath(settings, item.path);
@@ -411,6 +555,8 @@ function badge(text, cls = '') {
 }
 
 let channelSignature = '';
+let listedChannels = '';
+let libraryTimer = 0;
 
 function showStatus() {
   const alive = status && Date.now() - statusAt < 8000;
@@ -454,6 +600,12 @@ function showStatus() {
   }
 
   const signature = JSON.stringify([status.channels, status.channelIndex]);
+  const listed = JSON.stringify((status.channels || []).map((c) => [c.id, c.films]));
+  if (listed !== listedChannels) {
+    listedChannels = listed;
+    clearTimeout(libraryTimer);
+    libraryTimer = setTimeout(loadLibrary, 800);
+  }
   if (signature !== channelSignature) {
     channelSignature = signature;
     const box = $('channels');
@@ -527,8 +679,10 @@ function connect() {
       statusAt = Date.now();
       showStatus();
     } else if (msg.type === 'settings') {
+      const before = JSON.stringify([settings?.web, settings?.youtube]);
       settings = msg.settings;
       showSettings();
+      if (JSON.stringify([settings?.web, settings?.youtube]) !== before) loadLibrary();
       if (platform === 'android') refreshMedia();
     }
   };
@@ -548,7 +702,8 @@ async function start() {
         .catch((err) => alert(err.message));
     });
   });
-  $('yt-add').addEventListener('click', addYouTubeChannel);
+  $('yt-add').addEventListener('click', addOnlineChannel);
+  $('library-reload').addEventListener('click', loadLibrary);
   $('reset').addEventListener('click', () => {
     if (confirm('Alle in der Fernbedienung geänderten Einstellungen verwerfen? Es gelten dann wieder die Werte aus config.json.')) {
       api('/api/settings', { reset: true }).catch((err) => alert(err.message));
@@ -582,6 +737,7 @@ async function start() {
     statusAt = Date.now() - (current.age || 0);
   }
   showStatus();
+  loadLibrary();
   connect();
   setInterval(showStatus, 2000);
 }

@@ -7,8 +7,11 @@ und rechnet das Bild so um, dass es wie auf einer alten Bildröhre aussieht.
 - **Mehrere Sender, die gleichzeitig laufen.** Jeder Ordner mit Filmen ist ein Sender.
   Alle Sender „senden“ weiter, auch wenn gerade ein anderer eingestellt ist – wer
   umschaltet, landet mitten im laufenden Programm.
-- **YouTube-Sender:** Videos und Playlists von YouTube als Programm, mit Effektschicht und
-  derselben Steuerung (siehe [YouTube-Sender](#youtube-sender)).
+- **Internet-Sender:** Filme von archive.org (mit voller Röhrensimulation) sowie Videos und
+  Playlists von YouTube als Programm, dazu fertige Vorschläge mit Fernsehen von 1977
+  (siehe [Internet-Sender](#internet-sender)).
+- **Filme auswählen:** In der Fernbedienung lassen sich einzelne Filme eines Senders an- und
+  abwählen.
 - **Röhrensimulation:** gewölbtes Glas mit runden Ecken, Zeilenstruktur, Lochmaske,
   unscharfe PAL-Farben, Rauschen, Geisterbild, Überstrahlen, Nachleuchten, Spiegelung.
   Beim Umschalten rauscht es und das Bild läuft kurz durch; beim Ausschalten fällt es
@@ -28,8 +31,9 @@ Benötigt werden nur [Node.js](https://nodejs.org) (ab Version 18) und ein Brows
 
 > **Stand der Erprobung:** Entwickelt und automatisch getestet unter Linux mit Chromium.
 > Auf einem echten Windows-PC, einem echten Raspberry Pi und mit dem Drehregler-Beispiel
-> wurde noch nicht getestet; die Android-App nur kurz auf einem Handy. Die YouTube-Sender
-> sind gegen einen nachgebauten YouTube-Player getestet, nicht gegen das echte YouTube.
+> wurde noch nicht getestet; die Android-App nur kurz auf einem Handy. Die Internet-Sender
+> sind gegen nachgebaute Gegenstellen getestet, nicht gegen das echte YouTube und nicht gegen
+> die Auslieferungsserver von archive.org.
 > Bitte vor der Ausstellung einen Probelauf über mehrere Tage auf dem Zielgerät einplanen.
 
 ## Schnellstart
@@ -128,10 +132,66 @@ scripts/video-umwandeln.sh /pfad/zum/film.mov
 Höhere Auflösungen bringen nichts: Das Bild wird ohnehin auf Fernsehauflösung von damals
 heruntergerechnet.
 
-## YouTube-Sender
+### Einzelne Filme auswählen
 
-Ein Sender kann statt eigener Dateien Videos oder Playlists von YouTube zeigen. Anlegen in der
-Fernbedienung unter „YouTube-Sender“ (Name und eine Adresse pro Zeile), oder in `config.json`:
+In der Fernbedienung unter „Filme auswählen“ steht jeder Sender mit seinen Filmen zum
+Ankreuzen. Abgewählte Filme laufen nicht mit; ein Sender ohne ausgewählte Filme verschwindet
+aus der Liste. Praktisch, wenn ein Ordner oder ein Album des Handys mehr enthält, als gezeigt
+werden soll. Die Auswahl steht in den Einstellungen unter `hiddenFiles`.
+
+## Internet-Sender
+
+Ein Sender kann statt eigener Dateien Filme aus dem Internet zeigen. Anlegen in der
+Fernbedienung unter „Internet-Sender“ (Name und eine Adresse pro Zeile) oder in `config.json`.
+YouTube-Adressen und andere Adressen gehören in getrennte Sender.
+
+### archive.org und direkte Videoadressen
+
+archive.org liefert die Videodateien selbst aus und erlaubt das Einbinden in fremde Seiten.
+Diese Filme laufen deshalb wie eigene Dateien durch die **volle** Röhrensimulation, ohne Werbung.
+
+```json
+"web": {
+  "channels": [
+    { "name": "Werbefernsehen 1977", "urls": ["https://archive.org/details/Commercials_de_1970s#1977"] }
+  ]
+}
+```
+
+- `https://archive.org/details/KENNUNG` nimmt alle Filme des Eintrags; hinter `#` steht ein
+  Filter (nur Dateien, deren Name so beginnt).
+- Eine direkte Adresse auf eine Videodatei (`….mp4`, `….webm`) geht ebenfalls. Bei anderen
+  Servern als archive.org funktioniert das nur, wenn der Server das Einbinden erlaubt (CORS).
+- Die Filmliste eines Eintrags wird einmal täglich neu abgefragt.
+
+### Vorschläge: Fernsehen von 1977
+
+Unter „Internet-Sender → Vorschläge: Fernsehen von 1977“ lassen sich fertige Sender mit einem
+Klick anlegen (Liste in `public/js/presets1977.js`):
+
+| Sender | Quelle | Inhalt |
+| --- | --- | --- |
+| Werbefernsehen 1977 | archive.org | rund 80 deutsche Werbespots mit Jahr 1977 im Dateinamen, etwa 37 Minuten |
+| Nachrichten 1977 | YouTube | Tagesschau (26.5., 12.10., 13.10., 24.12.), Sondersendung (19.10.), ZDF heute (5.3. mit Sendeschluss, 4.9.) |
+| Samstagabend 1977 | YouTube | Am laufenden Band (20.8., 17.9., Silvester), ZDF-Hitparade (1.10., 29.10., 26.11.), Musikladen (13.8.) |
+| ZDF-Werbung und Ansagen 1977 | YouTube | Werbeblöcke mit Mainzelmännchen (27.10.), Programmansage (11.6.) |
+| Fernsehen 1977 | archive.org | Spiel ohne Grenzen (7.9., Teil 1), ZDF-Reportage (17.4.), Schul-Lehrfilm |
+| DDR-Wochenschau 1977 | YouTube | DEFA „Der Augenzeuge“ 1977/10 und 1977/40 (offizieller Kanal DEFA Filmwelt) |
+| DDR-Fernsehen 1977 | archive.org | vier Filme des DDR-Fernsehens und der DEFA |
+
+Recherchiert im November 2026. Das Jahr stammt aus Titel, Dateiname oder Beschreibung des
+jeweiligen Uploads, meist mit genauem Sendedatum; Existenz und Einbettbarkeit wurden bei
+archive.org und YouTube abgefragt, gesichtet wurden die Filme nicht.
+
+> **Rechte:** Fast alle diese Aufnahmen haben private Sammler hochgeladen, nicht die Sender.
+> Sie können jederzeit verschwinden, und dass sie im Netz stehen, erlaubt noch keine öffentliche
+> Vorführung. Für die Ausstellung sollten die Rechte mit den Sendern geklärt werden (ARD/ZDF,
+> für Dreieich und den Hessentag 1977 am ehesten das Archiv des Hessischen Rundfunks, für die
+> DDR-Filme die DEFA-Stiftung) – oder die Vorschläge dienen nur zum Ausprobieren.
+
+### YouTube
+
+Ein Sender kann Videos oder Playlists von YouTube zeigen:
 
 ```json
 "youtube": {
@@ -250,6 +310,8 @@ lange drücken → „Filme“. Es gibt drei Wege, die sich kombinieren lassen:
   aus diesem Ordner gelesen.
 
 Zusätzlich liest die App immer ihren eigenen Ordner (Pfad steht in den Einstellungen).
+Soll nicht ein ganzes Album oder ein ganzer Ordner laufen, lassen sich die Filme unter
+„Filme auswählen“ einzeln an- und abwählen.
 Hochkant gefilmte Videos werden ganz gezeigt statt beschnitten. YouTube-Sender funktionieren
 in der App wie am PC.
 
@@ -325,7 +387,8 @@ legt nichts lahm – die Datei wird dann ignoriert und die Fernbedienung zeigt e
   aus, speichert Einstellungen, startet und überwacht den Browser (`--kiosk`).
 - `public/` – die Anzeige (WebGL): `shaders.js` Röhrensimulation, `broadcast.js` Sendeuhr,
   `player.js` Wiedergabe und Fehlerbehandlung, `director.js` Animationen, `audio.js` Ton,
-  `youtube.js` und `overlay.js` YouTube-Sender und ihre Effektschicht; `admin.*` Fernbedienung.
+  `online.js` Internet-Sender (archive.org), `youtube.js` und `overlay.js` YouTube-Sender und
+  ihre Effektschicht, `presets1977.js` Vorschläge; `admin.*` Fernbedienung.
 - `android/` – die Android-App: eine WebView mit derselben Anzeige und ein eingebauter Server
   in Java (`…/server/`), der sich nach außen wie `server.js` verhält. Die Anzeige wird beim
   Bauen aus `public/` in die App gepackt, die Standardwerte aus `server/defaults.jsonc`.

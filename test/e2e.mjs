@@ -289,8 +289,142 @@ try {
   s = await waitFor((x) => !x.videoPaused && x.playing === x.item.index && Math.abs(x.videoTime - x.item.offset) < 1, 8000);
   check('zurück im Vordergrund läuft das Bild an der richtigen Stelle weiter', !s.videoPaused && Math.abs(s.videoTime - s.item.offset) < 1, `Abweichung ${(s.videoTime - s.item.offset).toFixed(2)} s`);
 
-  // YouTube-Sender (gegen einen nachgebauten YouTube-Player, siehe test/youtube-mock.mjs)
+  // Internet-Sender: Filme von archive.org durch die volle Röhrensimulation.
+  // archive.org wird nachgestellt: Die Metadaten kommen aus dem Test, die Filme von einem zweiten
+  // Server, der – wie archive.org – das Einbinden in fremde Seiten erlaubt.
   await page.goto('about:blank');
+  const foreign = createApp({ config: path.join(dir, 'fremd.json'), data: path.join(dir, 'fremd-data'), media, log: { info() {}, warn() {}, error() {} } });
+  foreign.server.prependListener('request', (req, res) => res.setHeader('Access-Control-Allow-Origin', '*'));
+  await new Promise((resolve) => foreign.server.listen(0, '127.0.0.1', resolve));
+  const foreignBase = `http://127.0.0.1:${foreign.server.address().port}`;
+  const archiveFiles = {
+    '1977 Muster.webm': '/media/01-demo-farbe/01-testmuster.webm',
+    '1977 Balken.webm': '/media/01-demo-farbe/02-farbbalken.webm',
+    '1977 Balken Kopie.webm': '/media/01-demo-farbe/02-farbbalken.webm',
+    '1976 Anderes Jahr.webm': '/media/03-demo-breitbild/01-breitbild.webm',
+  };
+  const mockArchive = async (target) => {
+    await target.route('https://archive.org/metadata/**', (route) => {
+      const id = decodeURIComponent(new URL(route.request().url()).pathname.split('/').pop());
+      const body = id === 'testfilme' ? { metadata: { identifier: 'testfilme' }, files: Object.keys(archiveFiles).map((name) => ({ name, format: 'WebM', source: 'original', size: '1000', length: name.includes('Muster') ? '12.0' : '6.0' })) } : {};
+      route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body) });
+    });
+    await target.route('https://archive.org/download/testfilme/**', (route) => {
+      const name = decodeURIComponent(new URL(route.request().url()).pathname.split('/').pop());
+      route.fulfill({ status: 302, headers: { location: foreignBase + archiveFiles[name], 'access-control-allow-origin': '*' } });
+    });
+  };
+  const postSettings = (body) => fetch(`${base}/api/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  await postSettings({ patch: { web: { channels: [{ id: 'web-test', name: 'Archiv 1977', urls: ['https://archive.org/details/testfilme#1977', `${foreignBase}/media/03-demo-breitbild/01-breitbild.webm`] }] } } });
+
+  const web = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  const webErrors = [];
+  web.on('pageerror', (e) => webErrors.push(e.message));
+  await mockArchive(web);
+  await web.goto(base);
+  await web.waitForFunction(() => window.tv?.player?.channels.length > 0 && !window.tv.player.switching, null, { timeout: 30000 });
+  const webState = () =>
+    web.evaluate(() => {
+      const p = window.tv.player;
+      const st = p.status();
+      const v = p.active;
+      return {
+        names: st.channels.map((c) => c.name),
+        index: st.channelIndex,
+        films: st.channels[st.channelIndex]?.films,
+        total: st.channels[st.channelIndex]?.total,
+        item: st.item,
+        playing: p.itemIndex,
+        fault: st.fault,
+        idle: window.tv.director.mode === 'idle' && !st.switching,
+        paused: v.paused,
+        time: v.currentTime,
+        src: v.currentSrc,
+        source: window.tv.renderer.source?.kind ?? null,
+        ready: window.tv.renderer.sourceReady,
+        audio: window.tv.audio.ctx?.state,
+        list: (p.channel?.files || []).map((f) => f.name),
+      };
+    });
+  const webWait = async (fn, timeout = 20000) => {
+    const end = Date.now() + timeout;
+    for (;;) {
+      const x = await webState();
+      if (fn(x) || Date.now() > end) return x;
+      await sleep(150);
+    }
+  };
+  let w = await webState();
+  const webIndex = w.names.indexOf('Archiv 1977');
+  check('Internet-Sender steht in der Senderliste', webIndex >= 0, w.names.join(', '));
+  await web.evaluate((i) => window.tv.player.tune(i), webIndex);
+  w = await webWait((x) => x.index === webIndex && x.idle && !x.paused && x.time > 0.5 && x.ready && x.item && x.playing === x.item.index);
+  check('archive.org-Eintrag wird aufgelöst: Filter „1977“, ohne Doppelte, plus direkte Adresse', w.list.join('|') === '1977 Balken|1977 Muster|01-breitbild', w.list.join('|'));
+  check('Längen kommen aus den Metadaten von archive.org', Math.abs(w.total - (6 + 12 + 12.003)) < 0.5, `${w.total?.toFixed(1)} s`);
+  check('Film vom fremden Server läuft durch die Röhrensimulation, mit Ton', w.source === 'video' && w.ready && !w.paused && !w.fault && w.audio === 'running' && /^https:\/\/archive\.org\/download\/testfilme\/|^http:\/\/127\.0\.0\.1:/.test(w.src), w.src);
+  check('Internet-Sender folgt der Sendeuhr', Math.abs(w.time - w.item.offset) < 1.5, `Abweichung ${(w.time - w.item.offset).toFixed(2)} s`);
+  if (shots) await web.screenshot({ path: path.join(shots, '12-archive.png') });
+
+  // einzelne Filme abwählen
+  const balken = 'https://archive.org/download/testfilme/1977%20Balken.webm';
+  await postSettings({ patch: { hiddenFiles: [balken] } });
+  w = await webWait((x) => x.films === 2 && x.idle && !x.paused && x.time > 0.3);
+  check('abgewählter Film läuft nicht mehr mit', w.films === 2 && w.list.join('|') === '1977 Muster|01-breitbild' && !w.fault, w.list.join('|'));
+  const before2 = w.names.length;
+  await postSettings({ patch: { hiddenFiles: [balken, '/media/02-demo-schwarzweiss/01-muster.webm'] } });
+  w = await webWait((x) => x.names.length === before2 - 1);
+  check('Sender ohne ausgewählte Filme verschwindet', w.names.length === before2 - 1 && !w.names.includes('Demo Schwarz-Weiß'), w.names.join(', '));
+  check('der laufende Sender bleibt dabei eingestellt', w.names[w.index] === 'Archiv 1977', w.names[w.index]);
+  check('keine Skriptfehler beim Internet-Sender', webErrors.length === 0, webErrors.join(' | '));
+  await web.close();
+
+  // Bedienseite: Filme auswählen und Vorschläge für 1977
+  const admin2 = await browser.newPage({ viewport: { width: 420, height: 900 } });
+  const admin2Errors = [];
+  admin2.on('pageerror', (e) => admin2Errors.push(e.message));
+  admin2.on('dialog', (d) => d.accept());
+  await mockArchive(admin2);
+  await admin2.goto(`${base}/admin`);
+  await admin2.waitForFunction(() => document.querySelectorAll('#library details').length >= 4, null, { timeout: 15000 }).catch(() => {});
+  const lib = await admin2.$$eval('#library details', (els) => els.map((d) => [d.querySelector('summary').textContent, d.querySelectorAll('input:checked').length, d.querySelectorAll('input').length]));
+  const libArchive = lib.find((l) => l[0].startsWith('Archiv 1977'));
+  const libSw = lib.find((l) => l[0].startsWith('Demo Schwarz-Weiß'));
+  check('„Filme auswählen“ zeigt alle Sender mit dem Stand der Auswahl', !!libArchive && libArchive[1] === 2 && libArchive[2] === 3 && !!libSw && libSw[1] === 0 && libSw[2] === 1, JSON.stringify(lib.map((l) => l[0])));
+  // den abgewählten Film im Archiv-Sender wieder ankreuzen
+  await admin2.evaluate(() => {
+    const details = [...document.querySelectorAll('#library details')].find((d) => d.querySelector('summary').textContent.startsWith('Archiv 1977'));
+    details.open = true;
+    details.querySelector('input:not(:checked)').click();
+  });
+  let hiddenNow = [];
+  for (let i = 0; i < 40; i++) {
+    hiddenNow = (await (await fetch(`${base}/api/config`)).json()).settings.hiddenFiles;
+    if (hiddenNow.length === 1) break;
+    await sleep(100);
+  }
+  check('Ankreuzen in der Bedienseite speichert die Auswahl', hiddenNow.length === 1 && hiddenNow[0] === '/media/02-demo-schwarzweiss/01-muster.webm', JSON.stringify(hiddenNow));
+
+  const presets = await admin2.$$eval('#presets-1977 .entry', (els) => els.map((e) => e.querySelector('b').textContent));
+  check('Vorschläge für 1977 werden angeboten', presets.length === 7 && presets[0] === 'Werbefernsehen 1977', presets.join(', '));
+  await admin2.evaluate(() => document.querySelector('#presets-1977 .entry button').click());
+  let saved = null;
+  for (let i = 0; i < 40; i++) {
+    saved = (await (await fetch(`${base}/api/config`)).json()).settings.web.channels.find((c) => c.id === 'p77-werbung');
+    if (saved) break;
+    await sleep(100);
+  }
+  await admin2.waitForFunction(() => document.querySelector('#presets-1977 .entry button')?.disabled, null, { timeout: 5000 }).catch(() => {});
+  const presetButton = await admin2.$eval('#presets-1977 .entry button', (b) => [b.textContent, b.disabled]);
+  check('Vorschlag wird als Sender angelegt', saved?.urls?.[0] === 'https://archive.org/details/Commercials_de_1970s#1977' && presetButton[1], `${presetButton[0]}`);
+  const overflow2 = await admin2.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  check('Bedienseite passt mit den neuen Karten auf ein Telefon', overflow2 <= 0, `${overflow2}px`);
+  if (shots) await admin2.screenshot({ path: path.join(shots, '13-bedienseite-filme.png'), fullPage: true });
+  check('keine Skriptfehler in der Bedienseite', admin2Errors.length === 0, admin2Errors.join(' | '));
+  await admin2.close();
+  await postSettings({ reset: true });
+  await foreign.close();
+
+  // YouTube-Sender (gegen einen nachgebauten YouTube-Player, siehe test/youtube-mock.mjs)
   await fetch(`${base}/api/settings`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

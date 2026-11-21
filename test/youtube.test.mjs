@@ -6,7 +6,7 @@ const store = new Map();
 globalThis.localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)) };
 
 const { parseYouTubeUrl, prepareYouTubeChannel, rememberYouTubeDuration, GUESSED_DURATION_S } = await import('../public/js/youtube.js');
-const { addYouTubeChannels } = await import('../server/media.js');
+const { addOnlineChannels } = await import('../server/media.js');
 const { buildSchedule } = await import('../public/js/broadcast.js');
 
 test('YouTube-Adressen aller üblichen Formen werden erkannt', () => {
@@ -99,7 +99,7 @@ test('YouTube-Sender aus den Einstellungen kommen hinter die Ordner-Sender', () 
       ],
     },
   };
-  const result = addYouTubeChannels(scan, settings);
+  const result = addOnlineChannels(scan, settings);
   assert.deepEqual(result.warnings, ['w']);
   assert.deepEqual(
     result.channels.map((c) => [c.id, c.name, c.type]),
@@ -114,9 +114,22 @@ test('YouTube-Sender aus den Einstellungen kommen hinter die Ordner-Sender', () 
   // ohne eigene Filme ersetzt der YouTube-Sender das Ersatz-Testbild
   const empty = { channels: [{ id: '_testbild', type: 'testcard', files: [] }], warnings: [] };
   assert.deepEqual(
-    addYouTubeChannels(empty, settings).channels.map((c) => c.id),
+    addOnlineChannels(empty, settings).channels.map((c) => c.id),
     ['yt-abc', 'yt-2']
   );
-  assert.equal(addYouTubeChannels(empty, {}).channels.length, 1);
-  assert.equal(addYouTubeChannels(empty, { youtube: { channels: 'x' } }).channels.length, 1);
+  assert.equal(addOnlineChannels(empty, {}).channels.length, 1);
+  assert.equal(addOnlineChannels(empty, { youtube: { channels: 'x' } }).channels.length, 1);
+
+  // Internet-Sender (archive.org, direkte Adressen) sind gewöhnliche Film-Sender, deren Liste die Anzeige auflöst
+  const web = addOnlineChannels(scan, { web: { channels: [{ name: 'Werbung 1977', urls: ['https://archive.org/details/Commercials_de_1970s#1977 '] }] }, youtube: settings.youtube });
+  assert.deepEqual(
+    web.channels.map((c) => [c.id, c.type, !!c.remote]),
+    [
+      ['01-a', 'video', false],
+      ['web-1', 'video', true],
+      ['yt-abc', 'youtube', false],
+      ['yt-2', 'youtube', false],
+    ]
+  );
+  assert.deepEqual(web.channels[1].options.urls, ['https://archive.org/details/Commercials_de_1970s#1977']);
 });

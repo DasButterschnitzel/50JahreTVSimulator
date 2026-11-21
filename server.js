@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Store, isPlainObject } from './server/config.js';
-import { scanMedia, addYouTubeChannels } from './server/media.js';
+import { scanMedia, addOnlineChannels } from './server/media.js';
 import { Kiosk } from './server/kiosk.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -221,7 +221,7 @@ export function createApp(options = {}) {
   }
 
   function configPayload() {
-    const { channels, warnings } = addYouTubeChannels(scanMedia(mediaDir()), store.settings());
+    const { channels, warnings } = addOnlineChannels(scanMedia(mediaDir()), store.settings());
     return {
       version: VERSION,
       platform: 'desktop',
@@ -239,7 +239,7 @@ export function createApp(options = {}) {
 
     if (req.method === 'GET') {
       if (route === '/api/config') return sendJson(res, 200, configPayload());
-      if (route === '/api/channels') return sendJson(res, 200, addYouTubeChannels(scanMedia(mediaDir()), store.settings()));
+      if (route === '/api/channels') return sendJson(res, 200, addOnlineChannels(scanMedia(mediaDir()), store.settings()));
       if (route === '/api/status') {
         return sendJson(res, 200, {
           status: lastStatus,

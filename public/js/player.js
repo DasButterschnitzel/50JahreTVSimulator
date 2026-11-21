@@ -7,6 +7,9 @@ import { prepareYouTubeChannel, rememberYouTubeDuration } from './youtube.js';
 
 const LOAD_TIMEOUT_MS = 12000;
 const STALL_TIMEOUT_MS = 8000;
+// Filme aus dem Internet (archive.org) brauchen länger zum Anlaufen und Nachladen
+const REMOTE_LOAD_TIMEOUT_MS = 30000;
+const REMOTE_STALL_TIMEOUT_MS = 30000;
 const PLAY_TIMEOUT_MS = 3000;
 const SWITCH_TIMEOUT_MS = 30000;
 const FINISH_GRACE_S = 3;
@@ -29,7 +32,7 @@ function mediaErrorText(video) {
 }
 
 /** Lädt eine Datei, springt an die Stelle offset und meldet, wenn ein Bild bereitsteht. */
-function loadVideo(video, url, offset) {
+function loadVideo(video, url, offset, timeoutMs = LOAD_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     let done = false;
     let timer = 0;
@@ -61,7 +64,7 @@ function loadVideo(video, url, offset) {
       if (video.readyState >= 3 && !video.seeking) finish();
     };
     for (const [name, fn] of Object.entries(events)) video.addEventListener(name, fn);
-    timer = setTimeout(() => finish(new Error('Zeitüberschreitung beim Laden')), LOAD_TIMEOUT_MS);
+    timer = setTimeout(() => finish(new Error('Zeitüberschreitung beim Laden')), timeoutMs);
     video.src = url;
     video.load();
   });
@@ -108,6 +111,9 @@ export class Player {
   makeVideo() {
     const v = document.createElement('video');
     v.preload = 'auto';
+    // Filme von fremden Servern (Internet-Sender) dürfen nur dann in die Röhrensimulation,
+    // wenn der Server das ausdrücklich erlaubt; für die eigenen Filme ändert das nichts.
+    v.crossOrigin = 'anonymous';
     v.playsInline = true;
     v.disableRemotePlayback = true;
     watchVideoFrames(v);
@@ -379,7 +385,7 @@ export class Player {
       } else {
         const v = this.active;
         // kleine Zugabe für die Ladezeit, damit das Bild zur Sendeuhr passt
-        await loadVideo(v, loc.item.url, loc.offset + (this.clock.paused ? 0 : 0.2));
+        await loadVideo(v, loc.item.url, loc.offset + (this.clock.paused ? 0 : 0.2), ch.remote ? REMOTE_LOAD_TIMEOUT_MS : LOAD_TIMEOUT_MS);
         if (token !== this.token) return false;
         this.noteDuration(ch, loc.index, v.duration);
         if (!this.clock.paused) await this.play(v);
@@ -595,7 +601,7 @@ export class Player {
       this.lastTime = v.currentTime;
       this.lastAdvance = now;
       if (now - this.healthySince > 30000) this.stalls = 0;
-    } else if (now - this.lastAdvance > (v.youtube ? YOUTUBE_STALL_TIMEOUT_MS : STALL_TIMEOUT_MS)) {
+    } else if (now - this.lastAdvance > (v.youtube ? YOUTUBE_STALL_TIMEOUT_MS : ch.remote ? REMOTE_STALL_TIMEOUT_MS : STALL_TIMEOUT_MS)) {
       this.stalls++;
       this.log.warn(`Wiedergabe hängt (${this.stalls}. Mal) – Sender wird neu eingestellt.`);
       if (this.stalls >= MAX_STALLS) {

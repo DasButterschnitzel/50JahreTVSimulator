@@ -40,24 +40,43 @@
       </section>
 
       <section class="card">
-        <h2>YouTube-Sender</h2>
+        <h2>Filme auswählen</h2>
+        <p class="note" style="margin-top: 0">Abgewählte Filme laufen nicht mit. Ein Sender ohne ausgewählte Filme verschwindet aus der Liste.</p>
+        <div id="library"></div>
+        <div class="row">
+          <button id="library-reload">Liste aktualisieren</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Internet-Sender</h2>
         <div id="yt-list" class="channels"></div>
         <div class="control inline">
           <label for="yt-name">Name des Senders</label>
           <input id="yt-name" type="text" maxlength="40" placeholder="z. B. Hessenschau" />
         </div>
-        <label class="label" for="yt-urls" style="display: block; margin-top: 12px">Adressen von Videos oder Playlists (eine pro Zeile)</label>
-        <textarea id="yt-urls" rows="3" placeholder="https://www.youtube.com/watch?v=…&#10;https://www.youtube.com/playlist?list=…"></textarea>
+        <label class="label" for="yt-urls" style="display: block; margin-top: 12px">Adressen von YouTube oder archive.org (eine pro Zeile)</label>
+        <textarea id="yt-urls" rows="3" placeholder="https://www.youtube.com/watch?v=…&#10;https://archive.org/details/…"></textarea>
         <div id="yt-error" class="note" style="color: #ffb9a8"></div>
         <div class="row">
-          <button id="yt-add" class="primary">YouTube-Sender hinzufügen</button>
+          <button id="yt-add" class="primary">Sender hinzufügen</button>
         </div>
         <p class="note">
-          Braucht Internet. Mehrere Videos laufen nacheinander in Endlosschleife und – wie alle Sender – im Hintergrund weiter. YouTube kann
-          Werbung einblenden; manche Videos erlauben das Einbetten nicht und werden übersprungen. Röhrenform, Zeilen, Glas und Rauschen
-          liegen als Schicht über dem YouTube-Bild; die volle Simulation (Farbunschärfe, Geisterbild, Nachleuchten) gibt es nur für eigene
-          Filmdateien.
+          Braucht Internet. <b>archive.org</b> und direkte Videoadressen laufen durch die volle Röhrensimulation; hinter „#“ lässt sich
+          filtern, z. B. <code>…/details/Commercials_de_1970s#1977</code>. Bei <b>YouTube</b> (Videos und Playlists) liegen Röhrenform,
+          Zeilen, Glas und Rauschen als Schicht über dem Bild; YouTube kann Werbung einblenden, und Videos ohne Einbettungserlaubnis werden
+          übersprungen.
         </p>
+
+        <details>
+          <summary>Vorschläge: Fernsehen von 1977</summary>
+          <div id="presets-1977" class="channels" style="margin-top: 10px"></div>
+          <p class="note">
+            Recherchiert im November 2026; das Jahr stammt aus Titel oder Dateiname des jeweiligen Uploads. Fast alle Aufnahmen kommen von
+            privaten Sammlern, nicht von den Sendern: Sie können jederzeit verschwinden, und für eine öffentliche Vorführung müssen die
+            Rechte geklärt werden.
+          </p>
+        </details>
       </section>
 
       <section class="card" id="media-card" hidden>
@@ -80,6 +99,7 @@
           Auswahl“.<br />
           <b>Ordner mit Sendern:</b> für USB-Stick oder SD-Karte – jeder Unterordner ist ein Sender.
         </p>
+        <p class="note">Einzelne Filme eines Albums oder Ordners lassen sich oben unter „Filme auswählen“ an- und abwählen.</p>
         <p id="media-app-folder" class="note"></p>
       </section>
 

@@ -15,7 +15,7 @@ android {
         applicationId = 'io.github.dasbutterschnitzel.tv1977'
         minSdk = 24
         targetSdk = 35
-        versionCode = 2
+        versionCode = 3
         versionName = appVersion
     }
 

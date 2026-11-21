@@ -289,3 +289,40 @@ textarea {
   font-size: 12px;
   color: var(--dim);
 }
+
+.film {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 4px 2px;
+  border-top: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.film input {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  accent-color: var(--accent);
+}
+.film span {
+  min-width: 0;
+}
+.entry.preset {
+  align-items: flex-start;
+}
+.entry.preset .note {
+  margin-top: 2px;
+}
+.entry .meta {
+  font-size: 13px;
+  opacity: 0.75;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+code {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
