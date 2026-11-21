@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Kachel für Android-TV-Startbildschirme (320 x 180 dp) -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <size android:width="320dp" android:height="180dp" />
+            <solid android:color="#E08A2C" />
+        </shape>
+    </item>
+    <item android:drawable="@drawable/ic_tv" android:gravity="center" android:width="180dp" android:height="180dp" />
+</layer-list>

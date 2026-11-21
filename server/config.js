@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { DEFAULTS } from './defaults.js';
 
 export function isPlainObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -28,7 +27,7 @@ export function deepMerge(base, ...overrides) {
  * damit die Konfiguration von Hand bearbeitet werden kann.
  */
 export function parseLooseJson(text) {
-  text = String(text).replace(/^﻿/, '');
+  text = String(text).replace(/^\uFEFF/, '');
   let stripped = '';
   let i = 0;
   let inString = false;
@@ -88,6 +87,9 @@ export function parseLooseJson(text) {
 export function readLooseJsonFile(file) {
   return parseLooseJson(fs.readFileSync(file, 'utf8'));
 }
+
+/** Standardwerte; dieselbe Datei benutzt auch die Android-App. */
+export const DEFAULTS = readLooseJsonFile(new URL('./defaults.jsonc', import.meta.url));
 
 /**
  * Verwaltet config.json (von Hand gepflegt) und data/state.json

@@ -418,6 +418,26 @@ function showStatus() {
   $('system-info').textContent = info.join(' · ');
 }
 
+// ---------------------------------------------------------------- Filmordner (Android-App)
+
+let platform = 'desktop';
+
+function showMedia(config) {
+  if (platform !== 'android') return;
+  $('media-card').hidden = false;
+  const media = config.media || {};
+  $('media-label').textContent = media.label || '–';
+  $('media-app-folder').textContent = media.appFolder ? `Ohne Auswahl sucht die App hier: ${media.appFolder}` : '';
+  // Funktionen, die es nur am PC gibt
+  document.querySelectorAll('[data-system="restartBrowser"]').forEach((b) => (b.textContent = 'Anzeige neu starten'));
+}
+
+function refreshMedia() {
+  api('/api/config')
+    .then(showMedia)
+    .catch(() => {});
+}
+
 // ---------------------------------------------------------------- Start
 
 function connect() {
@@ -436,6 +456,7 @@ function connect() {
     } else if (msg.type === 'settings') {
       settings = msg.settings;
       showSettings();
+      if (platform === 'android') refreshMedia();
     }
   };
 }
@@ -477,6 +498,8 @@ async function start() {
 
   const config = await api('/api/config');
   settings = config.settings;
+  platform = config.platform || 'desktop';
+  showMedia(config);
   showSettings();
   const current = await api('/api/status');
   serverInfo = current.server;

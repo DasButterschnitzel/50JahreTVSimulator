@@ -1,7 +1,7 @@
 {
   // Einstellungen des TV-Simulators.
   // Hier stehen nur die wichtigsten Werte; alle weiteren (mit ihren Standardwerten)
-  // finden sich in server/defaults.js und können genauso eingetragen werden.
+  // finden sich in server/defaults.jsonc und können genauso eingetragen werden.
   // Was in der Fernbedienung verstellt wird, hat Vorrang vor dieser Datei
   // ("Alle Einstellungen zurücksetzen" in der Fernbedienung hebt das wieder auf).
 

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TV 1977</string>
+    <string name="back_again">Zum Beenden noch einmal „Zurück“ drücken</string>
+    <string name="no_picker">Dieses Gerät hat keine Ordnerauswahl. Bitte den App-Ordner benutzen.</string>
+    <string name="folder_failed">Der Ordner konnte nicht geöffnet werden.</string>
+    <string name="server_failed">Der TV-Simulator konnte nicht gestartet werden:\n%1$s</string>
+    <string name="storage_internal">Interner Speicher</string>
+    <string name="storage_card">Speicherkarte/USB</string>
+</resources>

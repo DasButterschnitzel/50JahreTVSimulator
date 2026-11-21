@@ -1,0 +1,140 @@
+// Standardwerte für alle Einstellungen (JSON mit Kommentaren).
+// Diese Datei wird vom Server (Windows, Raspberry Pi) und von der Android-App gelesen.
+// Reihenfolge beim Zusammenführen: Standardwerte  <-  config.json  <-  Änderungen aus der Fernbedienung
+//
+// Eigene Werte bitte nicht hier, sondern in config.json eintragen.
+{
+  "server": {
+    "port": 7777,
+    "host": "127.0.0.1", // "0.0.0.0" = Fernbedienung im Netzwerk erreichbar
+    "pin": "", // optionaler PIN für Zugriffe aus dem Netzwerk
+  },
+
+  "mediaDir": "media",
+  "startChannel": "last", // "last" oder Sendernummer (1 = erster Sender)
+  "wrapChannels": true, // nach dem letzten Sender wieder beim ersten anfangen
+
+  // Lage des Bildes auf dem Monitor (Kalibrierung für den Einbau in die Kiste)
+  "screen": {
+    "aspect": 1.3333, // Seitenverhältnis der Bildröhre (4:3)
+    "x": 0, // Verschiebung nach rechts (Anteil der Fensterhöhe)
+    "y": 0, // Verschiebung nach unten (Anteil der Fensterhöhe)
+    "scale": 1, // 1 = so groß wie möglich
+    "stretchX": 1, // horizontale Dehnung
+    "rotate": 0, // Drehung in Grad (90 = Monitor hochkant eingebaut)
+    "overscan": 0.04, // Bildanteil, der wie früher hinter dem Rand verschwindet
+    "background": "#000000",
+  },
+
+  "video": {
+    "fit": "fill", // "fill" = formatfüllend beschneiden, "fit" = ganz zeigen (Balken), "stretch" = verzerren
+  },
+
+  "effects": {
+    "enabled": true,
+    "curvature": 0.5, // Wölbung der Röhre
+    "cornerRadius": 0.09, // runde Ecken
+    "edgeShadow": 0.6, // Schatten am Röhrenrand
+    "scanlines": 0.5, // Stärke der Zeilenstruktur
+    "scanlineCount": 288, // sichtbare Zeilen (288 = ein PAL-Halbbild)
+    "interlace": false, // Zeilensprung-Flimmern
+    "mask": 0.3, // Stärke der Lochmaske
+    "maskType": "slot", // "slot", "dots", "aperture", "none"
+    "maskScale": 1,
+    "halation": 0.3, // Überstrahlen heller Bildteile
+    "chroma": 1, // Farbunschärfe (PAL-Farbbandbreite)
+    "softness": 0.6, // allgemeine Bildunschärfe
+    "noise": 0.07, // Bildrauschen
+    "colorNoise": 0.04, // Farbrauschen
+    "ghost": 0.06, // Geisterbild (Antennenreflexion)
+    "jitter": 0.5, // Zeilenzittern
+    "wobble": 0.4, // langsames Bildwabern
+    "hum": 0.03, // Brummstreifen
+    "flicker": 0.015, // Helligkeitsflimmern
+    "persistence": 0.3, // Nachleuchten
+    "saturation": 1.1,
+    "contrast": 1.08,
+    "brightness": 1.0,
+    "warmth": 0.25, // Farbstich älterer Röhren
+    "blackWhite": false, // Schwarz-Weiß-Gerät
+    "vignette": 0.3, // Randabdunklung
+    "reflection": 0.4, // Spiegelung auf dem Glas
+    "ambient": 0.35, // Aufhellung durch Raumlicht (graue Röhre)
+    "glitches": 0, // zufällige Bildstörungen pro Stunde (0 = aus)
+    "switchStatic": 0.45, // Mindestdauer des Rauschens beim Umschalten (Sekunden)
+    "switchRoll": 1, // Durchlaufen des Bildes nach dem Umschalten
+    "powerAnimation": true, // Ein-/Ausschaltanimation
+    "renderScale": 1, // < 1 entlastet schwache Grafikchips (Raspberry Pi)
+    "maxFps": 0, // 0 = Bildwiederholrate des Monitors
+  },
+
+  "audio": {
+    "volume": 0.8,
+    "muted": false,
+    "vintage": true, // Klang eines kleinen Mono-Lautsprechers
+    "staticVolume": 0.3, // Lautstärke des Rauschens beim Umschalten
+    "hum": 0.0, // Netzbrummen
+    "whistle": 0.0, // 15,6-kHz-Zeilenpfeifen
+    "testTone": 0.0, // 1-kHz-Ton auf dem Testbild
+  },
+
+  "testcard": {
+    "title": "DREIEICH",
+    "subtitle": "TESTBILD",
+  },
+
+  // Tastenbelegung. Ein USB-Drehregler meldet sich einfach als Tastatur.
+  "keys": {
+    "channelUp": ["ArrowUp", "ArrowRight", "PageUp", "F14"],
+    "channelDown": ["ArrowDown", "ArrowLeft", "PageDown", "F13"],
+    "channel1": ["1"],
+    "channel2": ["2"],
+    "channel3": ["3"],
+    "channel4": ["4"],
+    "channel5": ["5"],
+    "channel6": ["6"],
+    "channel7": ["7"],
+    "channel8": ["8"],
+    "channel9": ["9"],
+    "channel10": ["0"],
+    "pause": [" ", "k"],
+    "restartFilm": ["r"],
+    "restartChannel": ["Shift+R"],
+    "restartAll": ["Ctrl+Shift+R", "Home"],
+    "nextFilm": ["n"],
+    "prevFilm": ["b"],
+    "seekForward": ["."],
+    "seekBack": [","],
+    "volumeUp": ["+", "="],
+    "volumeDown": ["-"],
+    "mute": ["m"],
+    "power": ["p"],
+    "info": ["i", "F1"],
+    "settings": ["F2"],
+    "effects": ["e"],
+    "reload": ["F5"],
+    "quit": ["Ctrl+Shift+Q"],
+  },
+
+  "input": {
+    "wheel": "channel", // Mausrad: "channel", "volume" oder "none"
+    "wheelStep": 100, // Empfindlichkeit des Mausrads
+    "touch": "channel", // Wischen auf dem Bildschirm: "channel" = Sender wechseln, "none" = aus
+    "touchMenu": true, // langes Drücken öffnet die Einstellungen (für Besucher-Displays ausschalten)
+    "seekStep": 30, // Sekunden für Vor-/Zurückspringen
+  },
+
+  // Zeitsteuerung, Uhrzeiten als "HH:MM", leer = aus
+  "schedule": {
+    "powerOn": "",
+    "powerOff": "",
+    "restartAll": "",
+    "reload": "04:30", // tägliches Neuladen der Anzeige (Vorsorge im Dauerbetrieb)
+  },
+
+  "kiosk": {
+    "browserPath": "",
+    "extraArgs": [],
+    "heartbeatTimeout": 60, // Sekunden ohne Lebenszeichen, bis der Browser neu gestartet wird
+  },
+}

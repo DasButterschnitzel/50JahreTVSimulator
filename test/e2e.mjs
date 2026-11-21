@@ -5,7 +5,7 @@
 //
 // Voraussetzungen: ffmpeg und das npm-Paket "playwright" (npm i -D playwright).
 
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -35,10 +35,44 @@ fs.mkdirSync(path.join(media, '06-kaputt'));
 fs.writeFileSync(path.join(media, '06-kaputt', 'defekt.mp4'), 'das ist kein Film');
 fs.writeFileSync(path.join(media, '01-demo-farbe', '03-defekt.webm'), 'auch kein Film');
 
-const quiet = { info() {}, warn: (m) => console.log('   [server]', m), error: (m) => console.log('   [server]', m) };
-const app = createApp({ config: path.join(dir, 'config.json'), data: path.join(dir, 'data'), media, log: quiet });
-await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
-const base = `http://127.0.0.1:${app.server.address().port}`;
+// Der Test läuft wahlweise gegen den Node-Server (Standard) oder – mit TV_E2E_SERVER=java –
+// gegen den Server der Android-App, der dazu auf dem PC gestartet wird.
+const useJava = process.env.TV_E2E_SERVER === 'java';
+let base;
+let stopServer;
+if (useJava) {
+  const classes = path.join(dir, 'classes');
+  const sources = [];
+  const collect = (d) => {
+    for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
+      const full = path.join(d, entry.name);
+      if (entry.isDirectory()) collect(full);
+      else if (entry.name.endsWith('.java') && full.includes(`${path.sep}server${path.sep}`)) sources.push(full);
+    }
+  };
+  collect(path.join(ROOT, 'android/app/src'));
+  const javac = spawnSync('javac', ['-d', classes, ...sources], { stdio: 'inherit' });
+  if (javac.status !== 0) process.exit(2);
+  const child = spawn('java', ['-cp', classes, 'io.github.dasbutterschnitzel.tv1977.server.DesktopMain', '--public', path.join(ROOT, 'public'), '--defaults', path.join(ROOT, 'server/defaults.jsonc'), '--media', media, '--data', path.join(dir, 'data')], { stdio: ['ignore', 'pipe', 'inherit'] });
+  base = await new Promise((resolve, reject) => {
+    let buffer = '';
+    child.stdout.on('data', (chunk) => {
+      buffer += chunk;
+      const match = /PORT=(\d+)/.exec(buffer);
+      if (match) resolve(`http://127.0.0.1:${match[1]}`);
+      for (const line of String(chunk).split('\n')) if (line.startsWith('[')) console.log('   [server]', line);
+    });
+    child.on('exit', (code) => reject(new Error(`Java-Server beendet (${code})`)));
+  });
+  stopServer = async () => child.kill();
+  console.log('Teste den Server der Android-App (Java).');
+} else {
+  const quiet = { info() {}, warn: (m) => console.log('   [server]', m), error: (m) => console.log('   [server]', m) };
+  const app = createApp({ config: path.join(dir, 'config.json'), data: path.join(dir, 'data'), media, log: quiet });
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  base = `http://127.0.0.1:${app.server.address().port}`;
+  stopServer = () => app.close();
+}
 
 const browser = await chromium.launch({
   args: ['--autoplay-policy=no-user-gesture-required', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
@@ -234,13 +268,70 @@ try {
   const overflow = await admin.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   check('Fernbedienung passt auf ein Telefon', overflow <= 0, `${overflow}px`);
   if (shots) await admin.screenshot({ path: path.join(shots, '9-fernbedienung.png'), fullPage: true });
-  check('keine Skriptfehler', pageErrors.length === 0 && adminErrors.length === 0, [...pageErrors, ...adminErrors].join(' | '));
+  await admin.close();
+
+  // Anzeige unsichtbar (App im Hintergrund): Wiedergabe hält an, die Sendeuhr läuft weiter
+  await command('tune', { index: 0 });
+  s = await waitFor((x) => settled(x) && x.channelIndex === 0 && x.videoTime > 0 && !x.videoPaused);
+  const setVisibility = (value) =>
+    page.evaluate((v) => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => v });
+      document.dispatchEvent(new Event('visibilitychange'));
+    }, value);
+  const hiddenAt = s.item.position;
+  await setVisibility('hidden');
+  await sleep(1500);
+  s = await state();
+  const whileHidden = (((s.item.position - hiddenAt) % s.item.total) + s.item.total) % s.item.total;
+  check('im Hintergrund hält die Wiedergabe an, die Sendeuhr läuft weiter', s.videoPaused && whileHidden > 1 && whileHidden < 3, `${whileHidden.toFixed(2)} s`);
+  await setVisibility('visible');
+  s = await waitFor((x) => !x.videoPaused && x.playing === x.item.index && Math.abs(x.videoTime - x.item.offset) < 1, 8000);
+  check('zurück im Vordergrund läuft das Bild an der richtigen Stelle weiter', !s.videoPaused && Math.abs(s.videoTime - s.item.offset) < 1, `Abweichung ${(s.videoTime - s.item.offset).toFixed(2)} s`);
+
+  // Berührungsbildschirm (Handy, Besucher-Display): Wischen und langes Drücken
+  // (die erste Anzeige wird dafür geschlossen, sonst ist der Testrechner für eine zügige Wischbewegung zu langsam)
+  await page.goto('about:blank');
+  const touchContext = await browser.newContext({ viewport: { width: 900, height: 420 }, hasTouch: true, isMobile: true });
+  const touch = await touchContext.newPage();
+  const touchErrors = [];
+  touch.on('pageerror', (e) => touchErrors.push(e.message));
+  await touch.goto(base);
+  await touch.waitForFunction(() => window.tv?.player?.channels.length > 0 && !window.tv.player.switching, null, { timeout: 30000 });
+  const cdp = await touchContext.newCDPSession(touch);
+  const swipe = async (x1, y1, x2, y2) => {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x1, y: y1 }] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: (x1 + x2) / 2, y: (y1 + y2) / 2 }] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x2, y: y2 }] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  };
+  const touchChannel = () => touch.evaluate(() => window.tv.player.channelIndex);
+  // Die Eingabe kommt auf einem ausgelasteten Testrechner verzögert an, deshalb wird auf das Ergebnis gewartet.
+  const untilChannel = (index) => touch.waitForFunction((i) => window.tv.player.channelIndex === i, index, { timeout: 5000 }).catch(() => {});
+  const startChannel = await touchChannel();
+  await swipe(600, 200, 300, 210);
+  await untilChannel((startChannel + 1) % 6);
+  check('Wischen nach links schaltet einen Sender weiter', (await touchChannel()) === (startChannel + 1) % 6, `Sender ${startChannel + 1} -> ${(await touchChannel()) + 1}`);
+  await swipe(300, 200, 600, 190);
+  await untilChannel(startChannel);
+  check('Wischen nach rechts schaltet zurück', (await touchChannel()) === startChannel);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 300, y: 200 }] });
+  await touch.waitForFunction(() => document.getElementById('settings').classList.contains('shown'), null, { timeout: 5000 }).catch(() => {});
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await touch.waitForFunction(() => !!document.querySelector('#settings iframe'), null, { timeout: 5000 }).catch(() => {});
+  const menu = await touch.evaluate(() => ({ open: document.getElementById('settings').classList.contains('shown'), frame: !!document.querySelector('#settings iframe') }));
+  check('langes Drücken öffnet die Einstellungen', menu.open && menu.frame && (await touchChannel()) === startChannel);
+  if (shots) await touch.screenshot({ path: path.join(shots, '10-handy-einstellungen.png') });
+  await touch.locator('#settings-close').tap();
+  await touch.waitForFunction(() => !document.getElementById('settings').classList.contains('shown'), null, { timeout: 5000 }).catch(() => {});
+  check('Einstellungen lassen sich wieder schließen', !(await touch.evaluate(() => document.getElementById('settings').classList.contains('shown'))));
+  await touchContext.close();
+  check('keine Skriptfehler', pageErrors.length === 0 && adminErrors.length === 0 && touchErrors.length === 0, [...pageErrors, ...adminErrors, ...touchErrors].join(' | '));
 } catch (err) {
   failed++;
   console.error('Abbruch:', err);
 } finally {
   await browser.close();
-  await app.close();
+  await stopServer();
   fs.rmSync(dir, { recursive: true, force: true });
 }
 

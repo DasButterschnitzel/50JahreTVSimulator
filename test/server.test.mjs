@@ -42,7 +42,7 @@ async function startApp(setup = () => {}) {
 }
 
 test('Konfiguration darf Kommentare und überzählige Kommas enthalten', () => {
-  const parsed = parseLooseJson(`﻿{
+  const parsed = parseLooseJson(`\uFEFF{
     // Kommentar
     "a": 1, /* noch einer */
     "url": "http://x/y, // kein Kommentar",

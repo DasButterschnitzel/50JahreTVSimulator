@@ -131,6 +131,13 @@ export class AudioEngine {
     return this.running;
   }
 
+  /** Ton ganz anhalten, solange die Anzeige unsichtbar ist. */
+  setSuspended(suspended) {
+    if (!this.ok) return;
+    if (suspended) this.ctx.suspend().catch(() => {});
+    else this.ctx.resume().catch(() => {});
+  }
+
   ramp(param, value, time = 0.05) {
     const now = this.ctx.currentTime;
     param.cancelScheduledValues(now);

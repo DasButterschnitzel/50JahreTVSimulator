@@ -84,6 +84,7 @@ export class Player {
     this.fault = null;
     this.powered = true;
     this.needsGesture = false;
+    this.suspended = false;
     this.standbyFor = null;
     this.stalls = 0;
     this.switchStarted = 0;
@@ -211,6 +212,27 @@ export class Player {
       } else if (err.name !== 'AbortError') {
         throw err;
       }
+    }
+  }
+
+  /**
+   * Anzeige ist unsichtbar (App im Hintergrund, Fenster verdeckt): Wiedergabe anhalten.
+   * Die Sendeuhr läuft weiter; beim Zurückkehren wird an die richtige Stelle gesprungen.
+   */
+  setSuspended(suspended) {
+    if (this.suspended === suspended) return;
+    this.suspended = suspended;
+    if (suspended) {
+      for (const v of this.videos) v.pause();
+    } else {
+      // Die Sendeuhr ist weitergelaufen: an die aktuelle Stelle springen
+      const v = this.active;
+      const loc = this.locateNow();
+      if (loc && loc.index === this.itemIndex && !this.fault && !this.loading && !this.switching && v.readyState >= 1 && !v.ended) {
+        if (Math.abs(v.currentTime - loc.offset) > 0.3) v.currentTime = Math.min(loc.offset, Math.max(0, v.duration - 0.2));
+      }
+      this.resetWatchdog();
+      this.tick();
     }
   }
 
@@ -374,7 +396,7 @@ export class Player {
 
   /** Film zu Ende: nahtlos zum nächsten wechseln. */
   onEnded(v) {
-    if (v !== this.active || this.switching || this.loading || !this.powered || this.clock.paused) return;
+    if (v !== this.active || this.switching || this.loading || !this.powered || this.clock.paused || this.suspended) return;
     const ch = this.channel;
     if (!ch || ch.type !== 'video') return;
     const schedule = this.schedule(ch);
@@ -427,7 +449,7 @@ export class Player {
       this.tune(this.channelIndex);
       return;
     }
-    if (!this.powered || this.switching || this.loading) return;
+    if (!this.powered || this.switching || this.loading || this.suspended) return;
     const ch = this.channel;
     if (!ch || ch.type !== 'video') return;
     const schedule = this.schedule(ch);

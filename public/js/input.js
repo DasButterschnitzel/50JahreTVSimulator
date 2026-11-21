@@ -1,6 +1,9 @@
-// Eingaben: Tastatur (auch USB-Drehregler, die sich als Tastatur melden) und Mausrad.
+// Eingaben: Tastatur (auch USB-Drehregler, die sich als Tastatur melden), Mausrad und Berührung.
 
 const REPEATABLE = new Set(['volumeUp', 'volumeDown', 'seekForward', 'seekBack']);
+const LONG_PRESS_MS = 800;
+const SWIPE_MIN_PX = 50;
+const SWIPE_MAX_MS = 900;
 
 function comboId({ ctrl, alt, meta, shift, key }) {
   return `${ctrl ? 'C' : ''}${alt ? 'A' : ''}${meta ? 'M' : ''}${shift ? 'S' : ''}:${key}`;
@@ -53,6 +56,73 @@ export class Input {
       { passive: false }
     );
     window.addEventListener('contextmenu', (e) => e.preventDefault());
+    this.bindTouch();
+  }
+
+  /** Berührungsbildschirm: Wischen wechselt den Sender, langes Drücken öffnet die Einstellungen. */
+  bindTouch() {
+    let start = null;
+    let timer = 0;
+    const cancel = () => {
+      clearTimeout(timer);
+      timer = 0;
+    };
+    const outside = (e) => !(e.target instanceof Element) || !e.target.closest('#settings');
+    window.addEventListener(
+      'touchstart',
+      (e) => {
+        cancel();
+        if (!outside(e) || e.touches.length !== 1) {
+          start = null;
+          return;
+        }
+        const t = e.touches[0];
+        start = { x: t.clientX, y: t.clientY, time: performance.now(), moved: false };
+        if (this.settings.input?.touchMenu !== false) {
+          timer = setTimeout(() => {
+            if (start && !start.moved) {
+              start = null;
+              this.onAction('settings');
+            }
+          }, LONG_PRESS_MS);
+        }
+      },
+      { passive: true }
+    );
+    window.addEventListener(
+      'touchmove',
+      (e) => {
+        if (!start) return;
+        const t = e.touches[0];
+        if (Math.hypot(t.clientX - start.x, t.clientY - start.y) > 14) {
+          start.moved = true;
+          cancel();
+        }
+      },
+      { passive: true }
+    );
+    window.addEventListener(
+      'touchend',
+      (e) => {
+        cancel();
+        const from = start;
+        start = null;
+        if (!from || (this.settings.input?.touch || 'channel') === 'none') return;
+        const t = e.changedTouches[0];
+        const dx = t.clientX - from.x;
+        const dy = t.clientY - from.y;
+        const distance = Math.max(Math.abs(dx), Math.abs(dy));
+        if (distance < SWIPE_MIN_PX || performance.now() - from.time > SWIPE_MAX_MS) return;
+        // nach links oder oben wischen = nächster Sender
+        const forward = Math.abs(dx) > Math.abs(dy) ? dx < 0 : dy < 0;
+        this.onAction(forward ? 'channelUp' : 'channelDown');
+      },
+      { passive: true }
+    );
+    window.addEventListener('touchcancel', () => {
+      cancel();
+      start = null;
+    });
   }
 
   applySettings(settings) {

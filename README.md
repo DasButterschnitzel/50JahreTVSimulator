@@ -18,14 +18,16 @@ und rechnet das Bild so um, dass es wie auf einer alten Bildröhre aussieht.
   Hänger neu, defekte Dateien werden übersprungen, nach einem Neustart des Rechners
   läuft das Programm an der richtigen Stelle weiter.
 
-Läuft unter **Windows** und auf dem **Raspberry Pi** (und jedem anderen Linux/Mac).
+Läuft unter **Windows** und auf dem **Raspberry Pi** (und jedem anderen Linux/Mac);
+für Handys, Tablets und Android-Displays gibt es dieselbe Anzeige als **Android-App**
+(siehe [Android-App](#android-app)).
 Benötigt werden nur [Node.js](https://nodejs.org) (ab Version 18) und ein Browser
 (Chrome, Edge oder Chromium). Keine Internetverbindung im Betrieb nötig.
 
 > **Stand der Erprobung:** Entwickelt und automatisch getestet unter Linux mit Chromium.
-> Auf einem echten Windows-PC, einem echten Raspberry Pi und mit dem Drehregler-Beispiel
-> wurde noch nicht getestet – bitte vor der Ausstellung einen Probelauf über mehrere
-> Tage auf dem Zielgerät einplanen.
+> Auf einem echten Windows-PC, einem echten Raspberry Pi, einem echten Android-Gerät und
+> mit dem Drehregler-Beispiel wurde noch nicht getestet – bitte vor der Ausstellung einen
+> Probelauf über mehrere Tage auf dem Zielgerät einplanen.
 
 ## Schnellstart
 
@@ -174,6 +176,57 @@ zu ändern. Möglichkeiten:
 
 Ein zweiter Knopf für die Lautstärke geht genauso (Tasten + und −).
 
+## Android-App
+
+Die App zeigt dieselbe Anzeige wie am PC – Röhrensimulation, gleichzeitig laufende Sender,
+Fernbedienung – und bringt ihren eigenen kleinen Server mit. Gedacht zum Ausprobieren auf dem
+Handy und für Android-Displays; Schwerpunkt des Projekts bleiben PC und Raspberry Pi.
+
+**Voraussetzungen:** Android 7 oder neuer und ein halbwegs aktuelles „Android System WebView“
+(Version 86 oder neuer; wird über den Play Store aktualisiert).
+
+**Installieren:** Die Datei `app-debug.apk` auf das Gerät kopieren und antippen; Android fragt
+dabei einmal nach der Erlaubnis, Apps aus dieser Quelle zu installieren.
+
+**Bedienen**
+
+| Geste | Funktion |
+| --- | --- |
+| Wischen (links/oben = vor, rechts/unten = zurück) | Sender wechseln |
+| Lange drücken | Einstellungen und Fernbedienung einblenden |
+| Zurück | Einstellungen schließen; zweimal kurz hintereinander beendet die App |
+
+Eine per USB angeschlossene Tastatur oder ein Drehregler funktioniert wie am PC. Für
+Besucher-Displays lässt sich das lange Drücken abschalten (`"input": { "touchMenu": false }`).
+
+**Filme:** Lange drücken → „Filmordner wählen“ und einen Ordner auf dem Gerät, der SD-Karte
+oder einem USB-Stick freigeben. Darin gilt dieselbe Ordnerstruktur wie oben (Unterordner =
+Sender). Alternativ die Filme in den Ordner der App kopieren; die Einstellungen zeigen den
+genauen Pfad. Eine `config.json` wird, falls vorhanden, aus dem Filmordner gelesen.
+
+**Fernbedienung von einem anderen Gerät:** in dieser `config.json` `"server": { "host": "0.0.0.0", "pin": "…" }`
+eintragen, App neu starten, dann `http://<Adresse des Geräts>:7777/admin` aufrufen.
+
+**Dauerbetrieb auf Displays:** Der Bildschirm bleibt an, solange die App läuft, und die Anzeige
+wird neu aufgebaut, falls sie abstürzt oder hängt. Den Start nach dem Einschalten übernimmt
+der Kioskmodus bzw. die Autostart-Einstellung des Displays – Android erlaubt Apps nicht, sich
+selbst nach dem Hochfahren in den Vordergrund zu holen.
+
+**Selbst bauen** (JDK 17 oder neuer; das Android-SDK lädt bei Bedarf `android/install-sdk.sh`):
+
+```bash
+cd android
+```
+
+```bash
+./gradlew assembleDebug
+```
+
+Die APK liegt danach in `android/app/build/outputs/apk/debug/`. Sie ist mit dem Testschlüssel
+des bauenden Rechners signiert: Wer eine auf einem anderen Rechner gebaute Fassung darüber
+installieren will, muss die App vorher deinstallieren. Für eine dauerhafte Verteilung einen
+eigenen Signaturschlüssel einrichten.
+
 ## Einbau in die Kiste
 
 In der Fernbedienung unter „Einbau in das Gehäuse“ wird das Bild verschoben, skaliert,
@@ -187,7 +240,7 @@ Bildkante zeichnet die Software.
 ## Einstellungen
 
 `config.json` enthält die wichtigsten Werte und darf Kommentare enthalten. Alle weiteren
-Einstellungen samt Standardwerten und Erklärung stehen in `server/defaults.js`.
+Einstellungen samt Standardwerten und Erklärung stehen in `server/defaults.jsonc`.
 Was in der Fernbedienung verstellt wird, landet in `data/state.json` und hat Vorrang;
 „Alle Einstellungen zurücksetzen“ hebt das wieder auf. Ein Tippfehler in `config.json`
 legt nichts lahm – die Datei wird dann ignoriert und die Fernbedienung zeigt eine Warnung.
@@ -224,5 +277,10 @@ legt nichts lahm – die Datei wird dann ignoriert und die Fernbedienung zeigt e
 - `public/` – die Anzeige (WebGL): `shaders.js` Röhrensimulation, `broadcast.js` Sendeuhr,
   `player.js` Wiedergabe und Fehlerbehandlung, `director.js` Animationen, `audio.js` Ton;
   `admin.*` Fernbedienung.
-- Tests: `npm test` (Sendeuhr, Server) und `npm run test:e2e` (kompletter Durchlauf im
-  Browser; benötigt ffmpeg und das npm-Paket `playwright`).
+- `android/` – die Android-App: eine WebView mit derselben Anzeige und ein eingebauter Server
+  in Java (`…/server/`), der sich nach außen wie `server.js` verhält. Die Anzeige wird beim
+  Bauen aus `public/` in die App gepackt, die Standardwerte aus `server/defaults.jsonc`.
+- Tests: `npm test` (Sendeuhr, Server, Android-Server im Vergleich) und `npm run test:e2e`
+  (kompletter Durchlauf im Browser; benötigt ffmpeg und das npm-Paket `playwright`). Mit
+  `TV_E2E_SERVER=java npm run test:e2e` läuft derselbe Durchlauf gegen den Server der
+  Android-App. `cd android && ./gradlew lintDebug testDebugUnitTest` prüft die App selbst.

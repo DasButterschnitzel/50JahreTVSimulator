@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Antenne -->
+    <path android:pathData="M54,36 L42,22 M54,36 L68,20" android:strokeColor="#F1E6CC" android:strokeWidth="2.5" android:strokeLineCap="round" />
+    <!-- Gehäuse -->
+    <path android:fillColor="#8A5A2B" android:pathData="M27,36 h54 a5,5 0 0 1 5,5 v32 a5,5 0 0 1 -5,5 h-54 a5,5 0 0 1 -5,-5 v-32 a5,5 0 0 1 5,-5 z" />
+    <!-- Bildröhre -->
+    <path android:fillColor="#1D2A30" android:pathData="M31,41 q17,-2.5 34,0 q2.5,15.5 0,32 q-17,2.5 -34,0 q-2.5,-16.5 0,-32 z" />
+    <path android:fillColor="#BFBF00" android:pathData="M33.5,43.5 h6 v26.5 h-6 z" />
+    <path android:fillColor="#00BFBF" android:pathData="M39.5,43 h6 v27.5 h-6 z" />
+    <path android:fillColor="#00BF00" android:pathData="M45.5,42.7 h6 v28 h-6 z" />
+    <path android:fillColor="#BF00BF" android:pathData="M51.5,42.7 h6 v28 h-6 z" />
+    <path android:fillColor="#BF0000" android:pathData="M57.5,43 h5.5 v27.5 h-5.5 z" />
+    <!-- Bedienfeld -->
+    <path android:fillColor="#F1E6CC" android:pathData="M76,47 m-4,0 a4,4 0 1 0 8,0 a4,4 0 1 0 -8,0" />
+    <path android:fillColor="#F1E6CC" android:pathData="M76,59 m-3,0 a3,3 0 1 0 6,0 a3,3 0 1 0 -6,0" />
+    <path android:pathData="M72,68 h8 M72,71.5 h8" android:strokeColor="#3D2D1C" android:strokeWidth="1.5" />
+    <!-- Füße -->
+    <path android:fillColor="#3D2D1C" android:pathData="M31,78 h8 v4 h-8 z M69,78 h8 v4 h-8 z" />
+</vector>

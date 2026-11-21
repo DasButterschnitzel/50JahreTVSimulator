@@ -192,6 +192,7 @@ async function boot() {
   const config = await loadConfig();
   app.settings = config.settings;
   app.version = config.version;
+  app.platform = config.platform || 'desktop';
   app.warnings = config.warnings || [];
   app.clock = new BroadcastClock(config.state.broadcast);
   app.director = new Director(app.settings);
@@ -228,6 +229,11 @@ async function boot() {
   }
 
   window.addEventListener('resize', () => app.renderer.resize());
+  document.addEventListener('visibilitychange', () => {
+    const hidden = document.visibilityState === 'hidden';
+    app.player.setSuspended(hidden);
+    app.audio.setSuspended(hidden);
+  });
   $('settings-close').addEventListener('click', () => toggleSettings(false));
   window.addEventListener('message', (e) => {
     if (e.origin === location.origin && e.data === 'tv-close-settings') toggleSettings(false);
@@ -260,6 +266,10 @@ async function boot() {
   setInterval(checkSchedule, 20000);
   setInterval(() => rescan(false), 120000);
   keepAwake();
+  if (app.platform === 'android') {
+    const noFilms = config.channels.every((c) => c.type !== 'video');
+    showTip(noFilms ? 'Noch keine Filme: lange drücken und „Filmordner wählen“ – Wischen wechselt den Sender' : 'Wischen: Sender wechseln · lange drücken: Einstellungen', noFilms ? 20000 : 7000);
+  }
   sendStatus();
   window.tv = app; // für Fehlersuche in der Browserkonsole
 }
@@ -388,11 +398,21 @@ function unlockAudio() {
   });
 }
 
+let tip = { text: '', until: 0 };
+
+/** Kurzer Bedienhinweis am unteren Bildrand. */
+function showTip(text, ms) {
+  tip = { text, until: Date.now() + ms };
+  updateHint();
+  setTimeout(updateHint, ms + 50);
+}
+
 function updateHint() {
   const hint = $('hint');
-  const blocked = app.player.needsGesture || (app.audio.ok && !app.audio.running);
-  hint.textContent = blocked ? 'Ton ist vom Browser gesperrt – bitte eine Taste drücken oder klicken.' : '';
-  hint.classList.toggle('shown', blocked && app.player.powered);
+  const blocked = (app.player.needsGesture || (app.audio.ok && !app.audio.running)) && app.player.powered && document.visibilityState !== 'hidden';
+  const text = blocked ? 'Ton ist vom Browser gesperrt – bitte eine Taste drücken, klicken oder tippen.' : Date.now() < tip.until ? tip.text : '';
+  hint.textContent = text;
+  hint.classList.toggle('shown', !!text);
 }
 
 function toggleSettings(show) {
@@ -400,6 +420,7 @@ function toggleSettings(show) {
   const open = typeof show === 'boolean' ? show : !box.classList.contains('shown');
   box.classList.toggle('shown', open);
   let frameEl = box.querySelector('iframe');
+  if (open) tip.until = 0;
   if (open && !frameEl) {
     frameEl = document.createElement('iframe');
     frameEl.src = 'admin.html?embedded=1';

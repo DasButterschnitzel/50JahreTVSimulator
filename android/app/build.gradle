@@ -1,0 +1,87 @@
+import groovy.json.JsonSlurper
+
+plugins {
+    id 'com.android.application'
+}
+
+// Versionsnummer kommt aus der package.json im Hauptordner
+def appVersion = new JsonSlurper().parse(file('../../package.json')).version as String
+
+android {
+    namespace = 'io.github.dasbutterschnitzel.tv1977'
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = 'io.github.dasbutterschnitzel.tv1977'
+        minSdk = 24
+        targetSdk = 35
+        versionCode = 1
+        versionName = appVersion
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+
+    lint {
+        abortOnError = true
+        checkReleaseBuilds = false
+        // Die App kommt bewusst ohne Zusatzbibliotheken (androidx) aus; @RequiresApi gibt es nur dort.
+        disable += 'UseRequiresApi'
+    }
+
+    testOptions {
+        unitTests {
+            // der Start-Test braucht die eingepackten Dateien der Anzeige
+            includeAndroidResources = true
+        }
+    }
+}
+
+/**
+ * Die Anzeige (Ordner public/) und die Standardwerte werden nicht kopiert und doppelt gepflegt,
+ * sondern bei jedem Bau frisch in die App gepackt.
+ */
+abstract class CopyWebAssets extends DefaultTask {
+    @InputDirectory
+    abstract DirectoryProperty getWeb()
+
+    @InputFile
+    abstract RegularFileProperty getDefaults()
+
+    @OutputDirectory
+    abstract DirectoryProperty getOutputDir()
+
+    @javax.inject.Inject
+    abstract FileSystemOperations getFs()
+
+    @TaskAction
+    void run() {
+        fs.sync {
+            it.from(web) { it.into('www') }
+            it.from(defaults)
+            it.into(outputDir)
+        }
+    }
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        def copyTask = tasks.register("copy${variant.name.capitalize()}WebAssets", CopyWebAssets) {
+            web.set(rootProject.file('../public'))
+            defaults.set(rootProject.file('../server/defaults.jsonc'))
+        }
+        variant.sources.assets?.addGeneratedSourceDirectory(copyTask, CopyWebAssets::getOutputDir)
+    }
+}
+
+dependencies {
+    // nur für die Tests; die App selbst hat keine Abhängigkeiten
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.14.1'
+}

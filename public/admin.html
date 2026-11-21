@@ -39,6 +39,19 @@
         </div>
       </section>
 
+      <section class="card" id="media-card" hidden>
+        <h2>Filme</h2>
+        <div class="label">Filmordner</div>
+        <div id="media-label" class="now-film">–</div>
+        <div class="row wrap">
+          <button class="primary" data-system="pickFolder">Filmordner wählen</button>
+          <button data-system="useAppFolder">App-Ordner benutzen</button>
+          <button data-cmd="rescan">Neu einlesen</button>
+        </div>
+        <p class="note">Im gewählten Ordner ist jeder Unterordner ein Sender. Filme direkt im Ordner bilden den Sender „Programm“.</p>
+        <p id="media-app-folder" class="note"></p>
+      </section>
+
       <section class="card">
         <h2>Wiedergabe</h2>
         <div class="row">

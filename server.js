@@ -223,6 +223,7 @@ export function createApp(options = {}) {
     const { channels, warnings } = scanMedia(mediaDir());
     return {
       version: VERSION,
+      platform: 'desktop',
       settings: store.settings(),
       state: { broadcast: store.state.broadcast, channel: store.state.channel, power: store.state.power },
       channels,

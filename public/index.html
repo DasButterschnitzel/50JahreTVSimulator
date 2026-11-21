@@ -2,7 +2,7 @@
 <html lang="de">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <title>TV-Simulator 1977</title>
     <style>
       html,
@@ -14,6 +14,9 @@
         background: #000;
         cursor: none;
         user-select: none;
+        -webkit-user-select: none;
+        touch-action: none;
+        overscroll-behavior: none;
       }
       #screen {
         position: fixed;
@@ -92,6 +95,7 @@
         border-left: 1px solid #a8743a;
         z-index: 10;
         cursor: auto;
+        touch-action: auto;
       }
       #settings.shown {
         display: flex;
