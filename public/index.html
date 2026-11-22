@@ -37,6 +37,33 @@
         position: absolute;
         transform-origin: center;
       }
+      /* Schwarz-Weiß über den Mischmodus: Sättigung der Fläche (grau = keine) ersetzt die des Bildes darunter */
+      #yt .yt-grey {
+        position: absolute;
+        inset: 0;
+        display: none;
+        background: #808080;
+        mix-blend-mode: saturation;
+      }
+      /* YouTube blendet beim Anhalten Titel, Logo und „Weitere Videos“ ein – das gehört nicht auf einen Fernseher von 1977 */
+      #yt .yt-mask {
+        position: absolute;
+        left: 0;
+        right: 0;
+        display: none;
+        background: #000;
+      }
+      #yt .yt-mask-top {
+        top: 0;
+        height: 17%;
+      }
+      #yt .yt-mask-bottom {
+        bottom: 0;
+        height: 24%;
+      }
+      #yt.yt-idle .yt-mask {
+        display: block;
+      }
       #yt iframe {
         position: absolute;
         inset: 0;

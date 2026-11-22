@@ -31,9 +31,9 @@ Benötigt werden nur [Node.js](https://nodejs.org) (ab Version 18) und ein Brows
 
 > **Stand der Erprobung:** Entwickelt und automatisch getestet unter Linux mit Chromium.
 > Auf einem echten Windows-PC, einem echten Raspberry Pi und mit dem Drehregler-Beispiel
-> wurde noch nicht getestet; die Android-App nur kurz auf einem Handy. Die Internet-Sender
-> sind gegen nachgebaute Gegenstellen getestet, nicht gegen das echte YouTube und nicht gegen
-> die Auslieferungsserver von archive.org.
+> wurde noch nicht getestet; die Android-App auf einem Handy. Der Abruf von archive.org ist
+> gegen den echten Server geprüft (Teilabrufe, Springen, Dekodieren), die Steuerung der
+> YouTube-Sender gegen einen nachgebauten Player.
 > Bitte vor der Ausstellung einen Probelauf über mehrere Tage auf dem Zielgerät einplanen.
 
 ## Schnellstart
@@ -147,8 +147,10 @@ YouTube-Adressen und andere Adressen gehören in getrennte Sender.
 
 ### archive.org und direkte Videoadressen
 
-archive.org liefert die Videodateien selbst aus und erlaubt das Einbinden in fremde Seiten.
-Diese Filme laufen deshalb wie eigene Dateien durch die **volle** Röhrensimulation, ohne Werbung.
+archive.org liefert die Videodateien selbst aus. Der eingebaute Server holt sie ab und reicht
+sie an die Anzeige weiter; so laufen diese Filme wie eigene Dateien durch die **volle**
+Röhrensimulation, ohne Werbung. (Direkt darf der Browser fremde Videos nicht in die Simulation
+holen – auch die von archive.org nicht.)
 
 ```json
 "web": {
@@ -160,8 +162,9 @@ Diese Filme laufen deshalb wie eigene Dateien durch die **volle** Röhrensimulat
 
 - `https://archive.org/details/KENNUNG` nimmt alle Filme des Eintrags; hinter `#` steht ein
   Filter (nur Dateien, deren Name so beginnt).
-- Eine direkte Adresse auf eine Videodatei (`….mp4`, `….webm`) geht ebenfalls. Bei anderen
-  Servern als archive.org funktioniert das nur, wenn der Server das Einbinden erlaubt (CORS).
+- Eine direkte Adresse auf eine Videodatei (`….mp4`, `….webm`) geht ebenfalls, auch von
+  anderen Servern. Der eingebaute Server ruft nur archive.org und die Server ab, die in einem
+  Internet-Sender eingetragen sind. In der Android-App müssen die Adressen mit `https://` beginnen.
 - Die Filmliste eines Eintrags wird einmal täglich neu abgefragt.
 
 ### Vorschläge: Fernsehen von 1977
@@ -210,8 +213,11 @@ Ordnernamens: `channel.json` mit `{ "type": "youtube", "urls": ["…"] }`.
   Sendeuhr mit einem Schätzwert. Eine Live-Übertragung läuft einfach live.
 - **Effekte:** Das Bild von YouTube lässt sich technisch nicht durch die Röhrensimulation
   schicken. Stattdessen liegen Röhrenform, Zeilen, Maske, Glas, Rauschen sowie das Rauschen beim
-  Umschalten und die Ein-/Ausschaltanimation als Schicht darüber; Wölbung und Farbe wirken direkt
-  auf das Bild. Farbunschärfe, Geisterbild, Nachleuchten und der Lautsprecherklang gibt es nur
+  Umschalten und die Ein-/Ausschaltanimation als Schicht darüber; Wölbung, Farbe und
+  Schwarz-Weiß wirken über Filter des Browsers direkt auf das Bild. Ob ein Gerät diese Filter auf
+  Videos anwendet, hängt von seinem Browser ab; die Statusanzeige (Taste I, in der Fernbedienung
+  unter „System“) zeigt, was er angenommen hat. Solange ein YouTube-Video angehalten ist,
+  verdecken Blenden YouTubes eigene Einblendungen (Titel, „Weitere Videos“). Farbunschärfe, Geisterbild, Nachleuchten und der Lautsprecherklang gibt es nur
   für eigene Dateien. Breitbild wird wie bei eigenen Filmen formatfüllend beschnitten.
 - **Voraussetzungen und Grenzen:** Internetverbindung am Ausstellungsort; YouTube kann Werbung
   einblenden; Videos, deren Besitzer das Einbetten verbieten, sowie gelöschte oder private

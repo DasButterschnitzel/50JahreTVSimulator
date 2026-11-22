@@ -87,7 +87,8 @@
   },
 
   // Internet-Sender: Filme von archive.org oder direkte Videoadressen (braucht Internet).
-  // Sie laufen – anders als YouTube – durch die volle Röhrensimulation. Beispiel:
+  // Der Server holt sie ab und reicht sie weiter; so laufen sie – anders als YouTube –
+  // durch die volle Röhrensimulation. Beispiel:
   //   "channels": [{ "name": "Werbung 1977", "urls": ["https://archive.org/details/Commercials_de_1970s#1977 "] }]
   // Hinter "#" steht ein Filter: nur Dateien, deren Name so beginnt.
   "web": {

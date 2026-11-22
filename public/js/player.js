@@ -27,7 +27,7 @@ const rand = (min, max) => min + Math.random() * (max - min);
 
 function mediaErrorText(video) {
   const code = video.error?.code;
-  const texts = { 1: 'abgebrochen', 2: 'Datei nicht lesbar', 3: 'Datei beschädigt', 4: 'Format wird nicht unterstützt' };
+  const texts = { 1: 'abgebrochen', 2: 'Datei nicht lesbar', 3: 'Datei beschädigt', 4: 'nicht abrufbar oder Format wird nicht unterstützt' };
   return texts[code] || video.error?.message || 'unbekannter Fehler';
 }
 
@@ -111,9 +111,6 @@ export class Player {
   makeVideo() {
     const v = document.createElement('video');
     v.preload = 'auto';
-    // Filme von fremden Servern (Internet-Sender) dürfen nur dann in die Röhrensimulation,
-    // wenn der Server das ausdrücklich erlaubt; für die eigenen Filme ändert das nichts.
-    v.crossOrigin = 'anonymous';
     v.playsInline = true;
     v.disableRemotePlayback = true;
     watchVideoFrames(v);
@@ -351,6 +348,11 @@ export class Player {
     }
     await minimum;
     if (token !== this.token) return;
+    if (loaded && (this.media.ended || this.locateNow(ch)?.index !== this.itemIndex)) {
+      // Während des Rauschens ist der Film zu Ende gegangen: gleich den nächsten zeigen statt eines Standbilds
+      loaded = await this.loadCurrent(token);
+      if (token !== this.token) return;
+    }
 
     if (ch.type === 'testcard') {
       this.showCard(this.testCanvas, ch);
@@ -378,6 +380,7 @@ export class Player {
     try {
       if (youtube) {
         if (!this.yt) throw new Error('YouTube wird in dieser Anzeige nicht unterstützt');
+        this.yt.setHeld(this.clock.paused);
         await this.yt.load(loc.item.youtube, loc.offset, this.clock.paused);
         if (token !== this.token) return false;
         this.needsGesture = this.needsGesture || this.yt.blocked;
@@ -638,6 +641,7 @@ export class Player {
     } else {
       this.clock.resume();
     }
+    this.yt?.setHeld(paused);
     this.onChange();
     this.tick();
   }

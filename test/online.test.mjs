@@ -61,8 +61,11 @@ test('aus einem archive.org-Eintrag werden die abspielbaren Filme gewählt', () 
     ]
   );
   // bevorzugt die von archive.org erzeugte H.264-Fassung, sonst das Original
-  assert.equal(spots[0].url, 'https://archive.org/download/Commercials_de_1970s/1977%204711%20-%20Echt%20K%C3%B6lnisch%20Wasser%20(4711).ia.mp4');
-  assert.equal(spots[2].url, 'https://archive.org/download/Commercials_de_1970s/1977%20Raider.mp4');
+  // abgerufen wird über den eigenen Server (/remote/…), weil der Browser fremde Videos nicht in die Simulation holen darf
+  const target = (file) => decodeURIComponent(file.url.replace(/^\/remote\//, ''));
+  assert.ok(spots.every((f) => f.url.startsWith('/remote/https%3A%2F%2Farchive.org%2Fdownload%2F')));
+  assert.equal(target(spots[0]), 'https://archive.org/download/Commercials_de_1970s/1977%204711%20-%20Echt%20K%C3%B6lnisch%20Wasser%20(4711).ia.mp4');
+  assert.equal(target(spots[2]), 'https://archive.org/download/Commercials_de_1970s/1977%20Raider.mp4');
   assert.equal(spots[0].size, 6944856);
 
   assert.equal(pickArchiveFiles(COMMERCIALS).length, 5, 'ohne Filter alle Jahre, ohne Vorschaubilder und Metadaten');
@@ -71,7 +74,7 @@ test('aus einem archive.org-Eintrag werden die abspielbaren Filme gewählt', () 
 
   // nicht abspielbares Original (MPG): die abgeleitete MP4-Fassung; AVI ohne Ableitung entfällt
   assert.deepEqual(
-    pickArchiveFiles(LEHRFILM).map((f) => [f.name, f.url, Math.round(f.duration)]),
+    pickArchiveFiles(LEHRFILM).map((f) => [f.name, target(f), Math.round(f.duration)]),
     [['Abwasser', 'https://archive.org/download/GeberitAbwasser/Abwasser.mp4', 2185]]
   );
   assert.deepEqual(pickArchiveFiles(null), []);
@@ -100,6 +103,7 @@ test('Internet-Sender wird aufgelöst; ohne Netz gilt die zuletzt bekannte Liste
     );
     assert.deepEqual(ch.invalidUrls, ['unsinn', 'https://archive.org/details/gibtesnicht']);
     assert.equal(ch.files[3].duration, undefined, 'direkte Adressen werden von der Anzeige vermessen');
+    assert.equal(ch.files[3].url, '/remote/https%3A%2F%2Fexample.org%2Fdirekt.mp4');
 
     // zweiter Aufruf kommt aus dem Zwischenspeicher (nur der unbekannte Eintrag wird erneut versucht)
     calls = 0;

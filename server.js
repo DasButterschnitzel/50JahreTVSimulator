@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { Store, isPlainObject } from './server/config.js';
 import { scanMedia, addOnlineChannels } from './server/media.js';
 import { Kiosk } from './server/kiosk.js';
+import { proxyRemote } from './server/remote.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
@@ -340,6 +341,18 @@ export function createApp(options = {}) {
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.writeHead(405).end();
+      return;
+    }
+    if (url.pathname.startsWith('/remote/')) {
+      // Filme der Internet-Sender: der Server holt sie ab und reicht sie weiter
+      let target;
+      try {
+        target = decodeURIComponent(url.pathname.slice('/remote/'.length));
+      } catch {
+        res.writeHead(400).end();
+        return;
+      }
+      proxyRemote(req, res, target, store.settings());
       return;
     }
     if (url.pathname.startsWith('/media/')) {

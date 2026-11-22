@@ -223,7 +223,7 @@ try {
   await sleep(300);
   await page.keyboard.press('p');
   s = await waitFor((x) => x.directorPower === 'on' && x.videoTime > 0, 8000);
-  check('Einschalten (Sender wurde im ausgeschalteten Zustand weitergedreht)', s.power && s.channelIndex === 1 && !s.videoPaused && s.gain === 1);
+  check('Einschalten (Sender wurde im ausgeschalteten Zustand weitergedreht)', s.power && s.channelIndex === 1 && !s.videoPaused && s.gain === 1, `an ${s.power}, Sender ${s.channelIndex + 1}, pausiert ${s.videoPaused}, Helligkeit ${s.gain}, Bild ${s.videoTime.toFixed(2)} s, ${s.directorPower}, schaltet ${s.switching}, Film ${s.item?.index}/${s.playing}`);
 
   // Lautstärke und Einstellungen über die Fernbedienung
   await page.keyboard.press('-');
@@ -289,12 +289,12 @@ try {
   s = await waitFor((x) => !x.videoPaused && x.playing === x.item.index && Math.abs(x.videoTime - x.item.offset) < 1, 8000);
   check('zurück im Vordergrund läuft das Bild an der richtigen Stelle weiter', !s.videoPaused && Math.abs(s.videoTime - s.item.offset) < 1, `Abweichung ${(s.videoTime - s.item.offset).toFixed(2)} s`);
 
-  // Internet-Sender: Filme von archive.org durch die volle Röhrensimulation.
-  // archive.org wird nachgestellt: Die Metadaten kommen aus dem Test, die Filme von einem zweiten
-  // Server, der – wie archive.org – das Einbinden in fremde Seiten erlaubt.
+  // Internet-Sender: Filme von einem fremden Server durch die volle Röhrensimulation.
+  // Der zweite Server verhält sich wie die Auslieferungsserver von archive.org: Er erlaubt dem
+  // Browser NICHT, seine Videos einzubinden. Der eigene Server muss sie deshalb abholen und weiterreichen.
+  // Die Liste eines archive.org-Eintrags wird mit nachgestellten Metadaten geprüft.
   await page.goto('about:blank');
   const foreign = createApp({ config: path.join(dir, 'fremd.json'), data: path.join(dir, 'fremd-data'), media, log: { info() {}, warn() {}, error() {} } });
-  foreign.server.prependListener('request', (req, res) => res.setHeader('Access-Control-Allow-Origin', '*'));
   await new Promise((resolve) => foreign.server.listen(0, '127.0.0.1', resolve));
   const foreignBase = `http://127.0.0.1:${foreign.server.address().port}`;
   const archiveFiles = {
@@ -309,13 +309,19 @@ try {
       const body = id === 'testfilme' ? { metadata: { identifier: 'testfilme' }, files: Object.keys(archiveFiles).map((name) => ({ name, format: 'WebM', source: 'original', size: '1000', length: name.includes('Muster') ? '12.0' : '6.0' })) } : {};
       route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body) });
     });
-    await target.route('https://archive.org/download/testfilme/**', (route) => {
-      const name = decodeURIComponent(new URL(route.request().url()).pathname.split('/').pop());
-      route.fulfill({ status: 302, headers: { location: foreignBase + archiveFiles[name], 'access-control-allow-origin': '*' } });
-    });
   };
   const postSettings = (body) => fetch(`${base}/api/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  await postSettings({ patch: { web: { channels: [{ id: 'web-test', name: 'Archiv 1977', urls: ['https://archive.org/details/testfilme#1977', `${foreignBase}/media/03-demo-breitbild/01-breitbild.webm`] }] } } });
+  const remoteUrl = (file) => `/remote/${encodeURIComponent(foreignBase + file)}`;
+  await postSettings({
+    patch: {
+      web: {
+        channels: [
+          { id: 'web-test', name: 'Archiv 1977', urls: [`${foreignBase}/media/01-demo-farbe/02-farbbalken.webm`, `${foreignBase}/media/01-demo-farbe/01-testmuster.webm`, `${foreignBase}/media/03-demo-breitbild/01-breitbild.webm`] },
+          { id: 'web-liste', name: 'Archiv Liste', urls: ['https://archive.org/details/testfilme#1977'] },
+        ],
+      },
+    },
+  });
 
   const web = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   const webErrors = [];
@@ -330,6 +336,7 @@ try {
       const v = p.active;
       return {
         names: st.channels.map((c) => c.name),
+        all: st.channels.map((c) => [c.name, c.films, Math.round(c.total)]),
         index: st.channelIndex,
         films: st.channels[st.channelIndex]?.films,
         total: st.channels[st.channelIndex]?.total,
@@ -359,17 +366,18 @@ try {
   check('Internet-Sender steht in der Senderliste', webIndex >= 0, w.names.join(', '));
   await web.evaluate((i) => window.tv.player.tune(i), webIndex);
   w = await webWait((x) => x.index === webIndex && x.idle && !x.paused && x.time > 0.5 && x.ready && x.item && x.playing === x.item.index);
-  check('archive.org-Eintrag wird aufgelöst: Filter „1977“, ohne Doppelte, plus direkte Adresse', w.list.join('|') === '1977 Balken|1977 Muster|01-breitbild', w.list.join('|'));
-  check('Längen kommen aus den Metadaten von archive.org', Math.abs(w.total - (6 + 12 + 12.003)) < 0.5, `${w.total?.toFixed(1)} s`);
-  check('Film vom fremden Server läuft durch die Röhrensimulation, mit Ton', w.source === 'video' && w.ready && !w.paused && !w.fault && w.audio === 'running' && /^https:\/\/archive\.org\/download\/testfilme\/|^http:\/\/127\.0\.0\.1:/.test(w.src), w.src);
+  const liste = w.all.find((c) => c[0] === 'Archiv Liste');
+  check('archive.org-Eintrag wird aufgelöst: Filter „1977“, ohne Doppelte, Längen aus den Metadaten', !!liste && liste[1] === 2 && liste[2] === 18, JSON.stringify(liste));
+  check('Internet-Sender mit direkten Adressen: Längen über den eigenen Server gemessen', w.list.join('|') === '02-farbbalken|01-testmuster|01-breitbild' && Math.abs(w.total - (6 + 12 + 12.003)) < 0.5, `${w.list.join('|')} · ${w.total?.toFixed(1)} s`);
+  check('Film vom fremden Server (ohne Freigabe zum Einbinden) läuft durch die Röhrensimulation, mit Ton', w.source === 'video' && w.ready && !w.paused && !w.fault && w.audio === 'running' && w.src.startsWith(`${base}/remote/`), w.src.slice(0, 60));
   check('Internet-Sender folgt der Sendeuhr', Math.abs(w.time - w.item.offset) < 1.5, `Abweichung ${(w.time - w.item.offset).toFixed(2)} s`);
   if (shots) await web.screenshot({ path: path.join(shots, '12-archive.png') });
 
   // einzelne Filme abwählen
-  const balken = 'https://archive.org/download/testfilme/1977%20Balken.webm';
+  const balken = remoteUrl('/media/01-demo-farbe/02-farbbalken.webm');
   await postSettings({ patch: { hiddenFiles: [balken] } });
   w = await webWait((x) => x.films === 2 && x.idle && !x.paused && x.time > 0.3);
-  check('abgewählter Film läuft nicht mehr mit', w.films === 2 && w.list.join('|') === '1977 Muster|01-breitbild' && !w.fault, w.list.join('|'));
+  check('abgewählter Film läuft nicht mehr mit', w.films === 2 && w.list.join('|') === '01-testmuster|01-breitbild' && !w.fault, w.list.join('|'));
   const before2 = w.names.length;
   await postSettings({ patch: { hiddenFiles: [balken, '/media/02-demo-schwarzweiss/01-muster.webm'] } });
   w = await webWait((x) => x.names.length === before2 - 1);
@@ -476,6 +484,9 @@ try {
           return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)];
         })(),
         filter: document.getElementById('yt').style.filter,
+        colorFilter: document.querySelector('#yt .yt-inner').style.filter,
+        masks: getComputedStyle(document.querySelector('#yt .yt-mask-top')).display === 'block',
+        diagnostics: window.tv.youtube.diagnostics(),
         source: window.tv.renderer.source?.kind ?? null,
       };
     });
@@ -497,7 +508,43 @@ try {
   check('Playlist wurde aufgelöst (1 Video + 2 aus der Playlist)', y.films === 3, `${y.films} Videos`);
   check('YouTube-Bild folgt der Sendeuhr', inSync(y), y.item ? `Abweichung ${(y.time - y.item.offset).toFixed(2)} s` : 'kein Film');
   check('YouTube-Bild sitzt in der Bildröhre (4:3, mittig)', Math.abs(y.box[2] / y.box[3] - 4 / 3) < 0.02 && Math.abs(y.box[0] + y.box[2] / 2 - 640) < 2 && y.box[3] === 720, y.box.join(','));
-  check('Wölbung und Farbfilter liegen auf dem YouTube-Bild', y.filter.includes('url(') && y.filter.includes('contrast'), y.filter);
+  check('Wölbung und Farbfilter liegen getrennt auf dem YouTube-Bild', y.filter === 'url("#yt-warp")' && y.colorFilter.includes('contrast') && !y.colorFilter.includes('url('), `${y.filter} | ${y.colorFilter}`);
+  check('solange YouTube läuft, sind die Blenden für seine Bedienoberfläche weg', !y.masks);
+
+  // Schwarz-Weiß: gemessen am Bildschirmfoto, auf zwei voneinander unabhängigen Wegen
+  const saturation = async () => {
+    const png = await yt.screenshot({ clip: { x: 340, y: 180, width: 600, height: 360 } });
+    return yt.evaluate(async (dataUrl) => {
+      const img = new Image();
+      img.src = dataUrl;
+      await img.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const data = ctx.getImageData(0, 0, img.width, img.height).data;
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 4) sum += (Math.max(data[i], data[i + 1], data[i + 2]) - Math.min(data[i], data[i + 1], data[i + 2])) / 255;
+      return sum / (data.length / 4);
+    }, `data:image/png;base64,${png.toString('base64')}`);
+  };
+  const colourful = await saturation();
+  await fetch(`${base}/api/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ patch: { effects: { blackWhite: true } } }) });
+  y = await ytWait((x) => x.colorFilter.includes('grayscale') && x.diagnostics.grey);
+  const greyBoth = await saturation();
+  await yt.evaluate(() => (document.querySelector('#yt .yt-inner').style.filter = ''));
+  const greyBlendOnly = await saturation();
+  await yt.evaluate(() => {
+    document.querySelector('#yt .yt-grey').style.display = 'none';
+    document.querySelector('#yt .yt-inner').style.filter = 'grayscale(1)';
+  });
+  const greyFilterOnly = await saturation();
+  check('Schwarz-Weiß wirkt auf das YouTube-Bild', colourful > 0.3 && greyBoth < 0.05, `Farbe ${colourful.toFixed(2)} -> ${greyBoth.toFixed(3)}`);
+  check('… sowohl über den Farbfilter als auch über die Grau-Schicht allein', greyFilterOnly < 0.05 && greyBlendOnly < 0.05, `Filter ${greyFilterOnly.toFixed(3)}, Schicht ${greyBlendOnly.toFixed(3)}`);
+  check('Diagnose der YouTube-Filter steht im Status', y.diagnostics.color.includes('grayscale') && y.diagnostics.warp.includes('url('), JSON.stringify(y.diagnostics));
+  await fetch(`${base}/api/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ patch: { effects: { blackWhite: false } } }) });
+  y = await ytWait((x) => !x.colorFilter.includes('grayscale') && !x.diagnostics.grey);
   y = await ytWait((x) => inSync(x) && !x.muted);
   check('Ton von YouTube ist an und folgt der Lautstärke', !y.muted && y.volume === Math.round(0.8 ** 2 * 100), `Lautstärke ${y.volume}`);
   await sleep(1500);
@@ -510,6 +557,7 @@ try {
   await sleep(1200);
   y = await ytState();
   check('Pause hält YouTube an', y.paused && Math.abs(y.time - ytPausedAt) < 0.1);
+  check('angehalten verdecken Blenden YouTubes Titel und „Weitere Videos“', y.masks);
   await yt.keyboard.press(' ');
   y = await ytWait((x) => !x.paused);
   check('Weiter nach Pause', !y.paused);

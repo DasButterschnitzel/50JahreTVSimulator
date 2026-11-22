@@ -640,6 +640,7 @@ function showStatus() {
   if (Number.isFinite(status.fps)) info.push(`${status.fps} Bilder/s`);
   if (Number.isFinite(status.uptime)) info.push(`Anzeige läuft seit ${formatTime(status.uptime)}`);
   if (serverInfo) info.push(`Browser-Neustarts: ${serverInfo.browserRestarts}`);
+  if (status.youtubeFilters) info.push(`YouTube-Filter: Farbe „${status.youtubeFilters.color}“, Wölbung „${status.youtubeFilters.warp}“${status.youtubeFilters.grey ? ', Grau-Schicht an' : ''}`);
   $('system-info').textContent = info.join(' · ');
 }
 

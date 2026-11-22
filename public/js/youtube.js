@@ -161,7 +161,16 @@ export class YouTubeDeck {
     this.waiters = new Set();
     this.inner = document.createElement('div');
     this.inner.className = 'yt-inner';
-    this.container.appendChild(this.inner);
+    // Schwarz-Weiß auf einem zweiten, vom Farbfilter unabhängigen Weg (Mischmodus)
+    this.grey = document.createElement('div');
+    this.grey.className = 'yt-grey';
+    // Blenden für YouTubes eigene Bedienoberfläche (Titel, „Weitere Videos“), solange nichts läuft
+    this.maskTop = document.createElement('div');
+    this.maskTop.className = 'yt-mask yt-mask-top';
+    this.maskBottom = document.createElement('div');
+    this.maskBottom.className = 'yt-mask yt-mask-bottom';
+    this.container.append(this.inner, this.grey, this.maskTop, this.maskBottom);
+    this.container.classList.add('yt-idle');
     this.media = this.makeMedia();
   }
 
@@ -288,6 +297,7 @@ export class YouTubeDeck {
 
   onState(state) {
     this.state = state;
+    this.updateIdle();
     if (state === STATE.PLAYING) {
       if (!this.playingSince) this.playingSince = performance.now();
       this.blocked = false;
@@ -407,7 +417,19 @@ export class YouTubeDeck {
     check();
   }
 
+  /** Angehalten (Pause der Sendeuhr): Blenden über YouTubes Einblendungen, egal was der Player gerade meldet. */
+  setHeld(held) {
+    this.held = !!held;
+    this.updateIdle();
+  }
+
+  updateIdle() {
+    const showing = this.videoId && (this.state === STATE.PLAYING || this.state === STATE.BUFFERING);
+    this.container.classList.toggle('yt-idle', this.held || !showing);
+  }
+
   stop() {
+    this.container.classList.add('yt-idle');
     this.videoId = null;
     this.playingSince = 0;
     this.audible = false;
@@ -470,23 +492,45 @@ export class YouTubeDeck {
     inner.top = '0';
     inner.transform = `scale(${fit === 'stretch' ? (width / wide) * zoom : zoom}, ${zoom})`;
 
+    // Farbe und Wölbung liegen auf getrennten Elementen: Kann ein Gerät die Wölbung nicht
+    // darstellen, verwirft der Browser sonst die ganze Filterkette samt Farbfiltern.
     const filters = [];
-    const curvature = on ? Number(fx.curvature) * 0.16 : 0;
-    if (curvature > 0 && settings.youtube?.warp !== false) {
-      this.updateWarp(width, height, curvature);
-      filters.push('url(#yt-warp)');
-    }
+    const bw = on && !!(fx.blackWhite || options.blackWhite);
     if (on) {
-      const bw = fx.blackWhite || options.blackWhite;
       if (bw) filters.push('grayscale(1)');
       else if (fx.saturation !== 1) filters.push(`saturate(${fx.saturation})`);
       if (fx.contrast !== 1) filters.push(`contrast(${fx.contrast})`);
       if (fx.brightness !== 1) filters.push(`brightness(${fx.brightness})`);
-      if (fx.warmth > 0) filters.push(`sepia(${Math.min(1, fx.warmth * 0.35)})`);
+      if (fx.warmth > 0 && !bw) filters.push(`sepia(${Math.min(1, fx.warmth * 0.35)})`);
       const blur = (Number(fx.softness) || 0) * 0.0009 * height;
       if (blur > 0.2) filters.push(`blur(${blur.toFixed(2)}px)`);
     }
-    style.filter = filters.join(' ');
+    inner.filter = filters.join(' ');
+    this.grey.style.display = bw ? 'block' : 'none';
+
+    const curvature = on ? Number(fx.curvature) * 0.16 : 0;
+    let warp = '';
+    if (curvature > 0 && settings.youtube?.warp !== false) {
+      try {
+        this.updateWarp(width, height, curvature);
+        warp = 'url(#yt-warp)';
+      } catch (err) {
+        this.log.warn(`Wölbung für YouTube nicht verfügbar: ${err.message}`);
+      }
+    }
+    style.filter = warp;
+  }
+
+  /** Was der Browser von den Filtern angenommen hat (für die Fehlersuche auf fremden Geräten). */
+  diagnostics() {
+    const read = (el) => {
+      try {
+        return getComputedStyle(el).filter;
+      } catch {
+        return '?';
+      }
+    };
+    return { state: this.state, warp: read(this.container), color: read(this.inner), grey: this.grey.style.display === 'block' };
   }
 
   /** Wölbung: Der Browser verschiebt die Bildpunkte nach einer Verschiebungskarte (wie der Shader). */

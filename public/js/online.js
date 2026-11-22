@@ -1,8 +1,8 @@
 // Internet-Sender: Filme von archive.org oder direkte Videoadressen als Programm.
 //
-// Anders als bei YouTube liefert archive.org die Videodateien selbst aus und erlaubt das
-// Einbinden in fremde Seiten. Diese Filme laufen deshalb wie eigene Dateien durch die
-// volle Röhrensimulation.
+// Anders als bei YouTube liefert archive.org die Videodateien selbst aus. Der eigene Server
+// holt sie ab und reicht sie weiter (siehe viaServer); so laufen diese Filme wie eigene
+// Dateien durch die volle Röhrensimulation.
 
 const CACHE_KEY = 'tv77.archive';
 const CACHE_MAX_AGE_MS = 24 * 3600 * 1000;
@@ -11,6 +11,13 @@ const VIDEO_EXTENSION = /\.(mp4|m4v|webm|mov|ogv)$/i;
 // Formate, die archive.org selbst aus dem Original erzeugt und die jeder Browser abspielt
 const DERIVATIVE_FORMATS = ['h.264', 'h.264 IA', 'h.264 HD', 'MPEG4', '512Kb MPEG4', 'WebM', 'Ogg Video'];
 const ARCHIVE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{1,99}$/;
+
+/**
+ * Adresse, unter der die Anzeige einen Film aus dem Internet abruft: über den eigenen Server.
+ * Fremde Server erlauben dem Browser meist nicht, ihre Videos durch die Röhrensimulation zu
+ * schicken – auch archive.org nicht (nur die Weiterleitung trägt die Freigabe, die Datei nicht).
+ */
+export const viaServer = (url) => `/remote/${encodeURIComponent(url)}`;
 
 const naturalCompare = (a, b) => a.localeCompare(b, 'de', { numeric: true, sensitivity: 'base' });
 
@@ -104,7 +111,7 @@ export function pickArchiveFiles(metadata, prefix = '') {
     const dedupe = title.replace(/\s+(Kopie|copy)(\s*\d+)?$/i, '').toLowerCase();
     if (seen.has(dedupe)) continue;
     seen.add(dedupe);
-    const file = { url: `https://archive.org/download/${id}/${encodePath(chosen.name)}`, name: title, size: Number(chosen.size) || 0, mtime: Number(chosen.mtime) || 0 };
+    const file = { url: viaServer(`https://archive.org/download/${id}/${encodePath(chosen.name)}`), name: title, size: Number(chosen.size) || 0, mtime: Number(chosen.mtime) || 0 };
     const duration = parseLength(chosen.length || group.original?.length);
     if (duration > 0) file.duration = duration;
     result.push(file);
@@ -163,7 +170,7 @@ export async function resolveWebChannel(ch, log = console) {
       continue;
     }
     if (parsed.direct) {
-      files.push({ url: parsed.direct, name: parsed.name, size: 0, mtime: 0 });
+      files.push({ url: viaServer(parsed.direct), name: parsed.name, size: 0, mtime: 0 });
       continue;
     }
     let known = cache[parsed.archive];

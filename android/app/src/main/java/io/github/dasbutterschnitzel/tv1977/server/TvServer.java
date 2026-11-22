@@ -171,6 +171,10 @@ public final class TvServer implements HttpServer.Handler {
             res.empty(405);
             return;
         }
+        if (req.path.startsWith("/remote/")) {
+            serveRemote(req, res, req.path.substring("/remote/".length()));
+            return;
+        }
         if (req.path.startsWith("/media/")) {
             serveMedia(req, res, req.path.substring("/media/".length()));
             return;
@@ -448,6 +452,122 @@ public final class TvServer implements HttpServer.Handler {
                 out.write(buffer, 0, n);
                 left -= n;
             }
+        }
+    }
+
+    // ------------------------------------------------------------ Filme aus dem Internet
+
+    private static final int MAX_REDIRECTS = 5;
+    private static final String[] PASS_HEADERS = {"Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "Last-Modified", "ETag"};
+
+    private static String hostKey(java.net.URL url) {
+        String host = url.getHost().toLowerCase(Locale.ROOT);
+        int port = url.getPort();
+        return port < 0 || port == url.getDefaultPort() ? host : host + ":" + port;
+    }
+
+    /** Hosts, zu denen der Server Filme abrufen darf: die Server der eingetragenen Internet-Sender (archive.org immer). */
+    @SuppressWarnings("deprecation") // new URL(String) läuft auf jeder Android-Version
+    static java.util.Set<String> allowedRemoteHosts(Map<String, Object> settings) {
+        java.util.Set<String> hosts = new java.util.HashSet<>();
+        Map<String, Object> web = Json.asObject(settings.get("web"));
+        Object list = web == null ? null : web.get("channels");
+        if (!(list instanceof List)) return hosts;
+        for (Object item : (List<?>) list) {
+            Map<String, Object> channel = Json.asObject(item);
+            if (channel == null || !(channel.get("urls") instanceof List)) continue;
+            for (Object entry : (List<?>) channel.get("urls")) {
+                if (!(entry instanceof String)) continue;
+                String text = ((String) entry).trim();
+                try {
+                    java.net.URL url = new java.net.URL(text.matches("(?i)^[a-z]+://.*") ? text : "https://" + text);
+                    if (url.getProtocol().equals("https") || url.getProtocol().equals("http")) hosts.add(hostKey(url));
+                } catch (java.net.MalformedURLException e) {
+                    // keine Adresse
+                }
+            }
+        }
+        return hosts;
+    }
+
+    static boolean isRemoteAllowed(java.net.URL url, java.util.Set<String> hosts) {
+        if (!url.getProtocol().equals("https") && !url.getProtocol().equals("http")) return false;
+        if (url.getUserInfo() != null) return false;
+        String name = url.getHost().toLowerCase(Locale.ROOT);
+        if (name.equals("archive.org") || name.endsWith(".archive.org")) return true;
+        return hosts.contains(hostKey(url));
+    }
+
+    /**
+     * Holt einen Film eines Internet-Senders ab und reicht ihn – samt Teilabrufen – an die Anzeige weiter.
+     * Fremde Server (auch archive.org) erlauben dem Browser meist nicht, ihre Videos als Bildquelle
+     * für die Röhrensimulation zu benutzen; über den eigenen Server geht es.
+     */
+    @SuppressWarnings("deprecation") // new URL(String) läuft auf jeder Android-Version
+    private void serveRemote(HttpServer.Request req, HttpServer.Response res, String encoded) throws IOException {
+        String target = HttpServer.percentDecode(encoded);
+        java.net.URL url;
+        try {
+            if (target == null) throw new java.net.MalformedURLException();
+            url = new java.net.URL(target);
+        } catch (java.net.MalformedURLException e) {
+            res.empty(400);
+            return;
+        }
+        java.util.Set<String> hosts = allowedRemoteHosts(store.settings());
+        java.net.HttpURLConnection connection = null;
+        try {
+            int status;
+            for (int hop = 0; ; hop++) {
+                // jede Station einzeln prüfen – auch Weiterleitungen dürfen nur zu erlaubten Servern führen
+                if (!isRemoteAllowed(url, hosts)) {
+                    res.send(403, "text/plain; charset=utf-8", "Dieser Server ist nicht als Internet-Sender eingetragen.".getBytes(StandardCharsets.UTF_8));
+                    return;
+                }
+                connection = (java.net.HttpURLConnection) url.openConnection();
+                connection.setInstanceFollowRedirects(false);
+                connection.setConnectTimeout(30000);
+                connection.setReadTimeout(30000);
+                connection.setRequestMethod(res.isHeadRequest() ? "HEAD" : "GET");
+                connection.setRequestProperty("User-Agent", "TV-Simulator-1977");
+                connection.setRequestProperty("Accept", "*/*");
+                connection.setRequestProperty("Accept-Encoding", "identity");
+                if (req.header("range") != null) connection.setRequestProperty("Range", req.header("range"));
+                if (req.header("if-range") != null) connection.setRequestProperty("If-Range", req.header("if-range"));
+                status = connection.getResponseCode();
+                String location = connection.getHeaderField("Location");
+                if (status >= 300 && status < 400 && location != null) {
+                    connection.disconnect();
+                    connection = null;
+                    if (hop >= MAX_REDIRECTS) throw new IOException("zu viele Weiterleitungen");
+                    url = new java.net.URL(url, location);
+                    continue;
+                }
+                break;
+            }
+            Map<String, String> headers = new LinkedHashMap<>();
+            headers.put("Cache-Control", "no-store");
+            for (String name : PASS_HEADERS) {
+                String value = connection.getHeaderField(name);
+                if (value != null) headers.put(name, value);
+            }
+            res.head(status, headers);
+            if (res.isHeadRequest()) return;
+            InputStream in = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
+            if (in == null) return;
+            try {
+                OutputStream out = res.body();
+                byte[] buffer = new byte[64 * 1024];
+                int n;
+                while ((n = in.read(buffer)) > 0) out.write(buffer, 0, n);
+            } finally {
+                in.close();
+            }
+        } catch (IOException | RuntimeException e) {
+            if (res.headersSent()) throw new IOException(e.getMessage());
+            res.send(502, "text/plain; charset=utf-8", ("Abruf fehlgeschlagen: " + e.getMessage()).getBytes(StandardCharsets.UTF_8));
+        } finally {
+            if (connection != null) connection.disconnect();
         }
     }
 

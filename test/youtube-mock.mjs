@@ -18,7 +18,7 @@ const API = `
       el.replaceWith(frame);
       frame.addEventListener('load', () => {
         const video = (this.video = frame.contentDocument.querySelector('video'));
-        video.addEventListener('playing', () => video.getAttribute('src') && this.setState(STATE.PLAYING));
+        video.addEventListener('playing', () => video.getAttribute('src') && !video.paused && this.setState(STATE.PLAYING));
         video.addEventListener('pause', () => !video.ended && video.getAttribute('src') && this.setState(STATE.PAUSED));
         video.addEventListener('ended', () => this.setState(STATE.ENDED));
         opts.events.onReady({ target: this });

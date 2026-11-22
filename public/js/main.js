@@ -571,6 +571,7 @@ function currentStatus() {
     volume: app.settings.audio.volume,
     muted: !!app.settings.audio.muted,
     audioBlocked: app.player.needsGesture || app.youtube.blocked || (app.audio.ok && !app.audio.running),
+    youtubeFilters: app.youtubeChannel ? app.youtube.diagnostics() : null,
     warnings: app.warnings,
     errors: errors.slice(-5),
   };
@@ -595,6 +596,7 @@ function updateInfo() {
     lines.push(`       ${formatTime(st.item.offset)} / ${formatTime(st.item.duration)}   (Programm ${formatTime(st.item.position)} / ${formatTime(st.item.total)})`);
   }
   lines.push(`Lautstärke ${Math.round(st.volume * 100)} %${st.muted ? ' (stumm)' : ''}`);
+  if (st.youtubeFilters) lines.push(`YouTube-Filter: Farbe „${st.youtubeFilters.color}“, Wölbung „${st.youtubeFilters.warp}“${st.youtubeFilters.grey ? ', Grau-Schicht an' : ''}`);
   lines.push('');
   lines.push('↑/↓ Sender   1–9 Sender direkt   Leertaste Pause   R Film neu');
   lines.push('Umschalt+R Sender neu   Pos1 alle neu   N/B Film vor/zurück');
