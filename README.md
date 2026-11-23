@@ -53,7 +53,13 @@ ersten Start) `data`; Anzeige und Server stecken in der Datei selbst. Sie überw
 Browser und startet beides nach einem Absturz neu. `TV-Simulator.exe --server` startet nur den
 Server ohne Browser.
 
-Das ZIP entsteht aus diesem Ordner mit (Node.js 22 oder neuer, Internetzugang):
+Das ZIP baut GitHub bei jeder Änderung von selbst und startet die Windows-Datei dabei zur
+Probe auf einem echten Windows (`.github/workflows/programm.yml`): auf GitHub unter
+**Actions** den neuesten Lauf „Programm bauen“ öffnen und unten bei **Artifacts**
+`TV-Simulator-1977-…-windows` herunterladen. Wer dort „Run workflow“ mit dem Haken
+„als Release veröffentlichen“ startet, bekommt die Pakete zusätzlich dauerhaft unter **Releases**.
+
+Von Hand entsteht das ZIP aus diesem Ordner mit (Node.js 22 oder neuer, Internetzugang):
 
 ```bash
 node tools/build-exe.mjs

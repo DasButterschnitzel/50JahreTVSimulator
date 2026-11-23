@@ -1,0 +1,104 @@
+# Baut das eigenständige Programm (TV-Simulator.exe und die Linux-Fassungen), startet die
+# Windows-Datei zur Probe auf einem echten Windows und legt die Pakete zum Herunterladen ab:
+# GitHub → Actions → dieser Lauf → „Artifacts“.
+name: Programm bauen
+
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+      - 'android/**'
+      - 'hardware/**'
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Pakete zusätzlich als Release veröffentlichen'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: programm-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bauen:
+    name: Bauen
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Tests
+        run: npm test
+      - name: Pakete bauen
+        run: |
+          node tools/build-exe.mjs win-x64
+          node tools/build-exe.mjs linux-arm64
+          node tools/build-exe.mjs linux-x64
+      - name: Linux-Fassung zur Probe starten
+        run: node tools/test-programm.mjs dist/.build/tv-simulator
+      - name: Windows-Paket auspacken
+        run: unzip -q dist/TV-Simulator-1977-*-windows.zip -d paket-windows
+      - name: Windows-Paket ablegen
+        uses: actions/upload-artifact@v5
+        with:
+          name: TV-Simulator-1977-${{ steps.version.outputs.version }}-windows
+          path: paket-windows
+          if-no-files-found: error
+      - name: Alle Pakete ablegen
+        uses: actions/upload-artifact@v5
+        with:
+          name: pakete
+          path: dist/*.zip
+          if-no-files-found: error
+          compression-level: 0
+
+  windows:
+    name: Probelauf auf Windows
+    needs: bauen
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v5
+        with:
+          name: TV-Simulator-1977-${{ needs.bauen.outputs.version }}-windows
+          path: paket
+      - name: TV-Simulator.exe starten, abfragen, beenden
+        run: node tools/test-programm.mjs paket/TV-Simulator-1977/TV-Simulator.exe --kiosk
+
+  release:
+    name: Veröffentlichen
+    if: github.event_name == 'workflow_dispatch' && inputs.release
+    needs: [bauen, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: pakete
+          path: pakete
+      - name: Release anlegen oder aktualisieren
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: v${{ needs.bauen.outputs.version }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" pakete/*.zip --clobber
+          else
+            gh release create "$TAG" pakete/*.zip --target "$GITHUB_SHA" \
+              --title "TV-Simulator 1977 – ${TAG#v}" \
+              --notes "Windows: ZIP entpacken, Filme in den Ordner media legen, TV-Simulator.exe doppelklicken. Die Datei ist nicht signiert – bei der Meldung von Windows „Weitere Informationen“ und „Trotzdem ausführen“ wählen."
+          fi
