@@ -6,7 +6,10 @@ setlocal
 pushd "%~dp0.."
 set "APPDIR=%CD%"
 popd
-powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Startup')+'\TV-Simulator 1977.lnk'); $s.TargetPath=$env:APPDIR+'\start-windows.bat'; $s.WorkingDirectory=$env:APPDIR; $s.WindowStyle=7; $s.Save()"
+rem Das eigenstaendige Programm hat Vorrang vor dem Start ueber Node.js
+set "STARTFILE=start-windows.bat"
+if exist "%APPDIR%\TV-Simulator.exe" set "STARTFILE=TV-Simulator.exe"
+powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Startup')+'\TV-Simulator 1977.lnk'); $s.TargetPath=$env:APPDIR+'\'+$env:STARTFILE; $s.WorkingDirectory=$env:APPDIR; $s.WindowStyle=7; $s.Save()"
 if errorlevel 1 (
   echo Die Verknuepfung konnte nicht angelegt werden.
 ) else (

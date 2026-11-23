@@ -3,3 +3,4 @@ data/
 # Filme gehören nicht ins Repository
 media/*
 !media/LIESMICH.md
+dist/

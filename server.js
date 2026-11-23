@@ -2,7 +2,10 @@
 // TV-Simulator 1977 – Server.
 // Liefert die Anzeige und die Filme aus, speichert Einstellungen und startet
 // auf Wunsch (--kiosk) den Browser im Vollbild und überwacht ihn.
+// Als eigenständige Programmdatei (TV-Simulator.exe, siehe tools/build-exe.mjs) startet
+// er den Fernseher von selbst und überwacht sich.
 
+import { spawn } from 'node:child_process';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -11,9 +14,10 @@ import { Store, isPlainObject } from './server/config.js';
 import { scanMedia, addOnlineChannels } from './server/media.js';
 import { Kiosk } from './server/kiosk.js';
 import { proxyRemote } from './server/remote.js';
+import { APP_DIR, isPackaged, readResource } from './server/resources.js';
 
-const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
+const ROOT = APP_DIR;
+const VERSION = JSON.parse(readResource('package.json').toString('utf8')).version;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -39,6 +43,8 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--kiosk') args.kiosk = true;
+    else if (a === '--server') args.server = true;
+    else if (a === '--worker') args.worker = true;
     else if (a === '--port') args.port = Number(argv[++i]);
     else if (a === '--host') args.host = argv[++i];
     else if (a === '--config') args.config = argv[++i];
@@ -185,10 +191,84 @@ function serveFile(req, res, baseDir, relPath) {
   });
 }
 
+/** Liefert eine Datei der Anzeige aus (aus dem Ordner public bzw. aus der Programmdatei). */
+function servePublic(req, res, relPath) {
+  let decoded;
+  try {
+    decoded = decodeURIComponent(relPath);
+  } catch {
+    res.writeHead(400).end();
+    return;
+  }
+  const data = readResource(`public/${decoded}`);
+  if (!data || decoded.split('/').includes('..')) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Nicht gefunden');
+    return;
+  }
+  res.writeHead(200, {
+    'Content-Type': MIME[path.extname(decoded).toLowerCase()] || 'application/octet-stream',
+    'Content-Length': data.length,
+    'Cache-Control': 'no-cache',
+  });
+  res.end(req.method === 'HEAD' ? undefined : data);
+}
+
+/** Legt beim ersten Start der eigenständigen Programmdatei die Dateien an, die man selbst pflegt. */
+function unpackStarterFiles() {
+  for (const [name, target] of [
+    ['config.json', path.join(APP_DIR, 'config.json')],
+    ['media/LIESMICH.md', path.join(APP_DIR, 'media', 'LIESMICH.md')],
+  ]) {
+    try {
+      if (fs.existsSync(target)) continue;
+      const data = readResource(name);
+      if (!data) continue;
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, data);
+    } catch {
+      // Ordner nicht beschreibbar: Es geht auch ohne, der Server meldet es beim Speichern
+    }
+  }
+}
+
+/**
+ * Wächter der eigenständigen Programmdatei: startet das eigentliche Programm als zweiten
+ * Prozess und startet es neu, falls es unerwartet endet.
+ */
+function supervise(argv) {
+  let child = null;
+  const start = () => {
+    child = spawn(process.execPath, [...argv, '--worker'], { stdio: 'inherit' });
+    child.on('exit', (code) => {
+      if (code === 0) process.exit(0);
+      if (code === 2) {
+        // Port belegt: Meldung stehen lassen, sonst schließt sich das Fenster sofort
+        console.log('Dieses Fenster schließt sich in 20 Sekunden.');
+        setTimeout(() => process.exit(2), 20000);
+        return;
+      }
+      console.log('Der TV-Simulator wurde unerwartet beendet. Neustart in 5 Sekunden …');
+      setTimeout(start, 5000);
+    });
+    child.on('error', (err) => {
+      console.error(`Start fehlgeschlagen: ${err.message}`);
+      setTimeout(start, 5000);
+    });
+  };
+  process.title = 'TV-Simulator 1977';
+  // Beenden übernimmt der zweite Prozess (er erhält dieselben Signale) – der Wächter wartet auf ihn
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    process.on(signal, () => {
+      // Unter Windows würde kill() das Programm hart abbrechen, dort kommt das Signal ohnehin bei beiden an
+      if (process.platform !== 'win32') child?.kill(signal);
+    });
+  }
+  start();
+}
+
 export function createApp(options = {}) {
   const configFile = path.resolve(options.config || path.join(ROOT, 'config.json'));
   const dataDir = path.resolve(options.data || path.join(ROOT, 'data'));
-  const publicDir = path.join(ROOT, 'public');
   const log = options.log || makeLogger(dataDir);
   const store = new Store({ configFile, dataDir, log });
   const startedAt = Date.now();
@@ -362,7 +442,7 @@ export function createApp(options = {}) {
     let rel = url.pathname.slice(1);
     if (rel === '') rel = 'index.html';
     else if (rel === 'admin' || rel === 'fernbedienung') rel = 'admin.html';
-    serveFile(req, res, publicDir, rel);
+    servePublic(req, res, rel);
   });
 
   return {
@@ -388,6 +468,7 @@ function main() {
 
   node server.js            Server starten (Anzeige unter http://localhost:7777)
   node server.js --kiosk    Server starten und Browser im Vollbild öffnen und überwachen
+  TV-Simulator.exe          wie --kiosk; mit --server nur der Server ohne Browser
 
 Optionen:
   --port <nr>     Port (Standard 7777)
@@ -396,6 +477,16 @@ Optionen:
   --media <pfad>  anderer Medienordner
   --data <pfad>   anderer Ordner für Zustand und Protokoll`);
     return;
+  }
+
+  if (isPackaged) {
+    // Doppelklick auf die Programmdatei: Fernseher im Vollbild, überwacht von einem Wächterprozess
+    if (!args.worker) {
+      supervise(process.argv.slice(2));
+      return;
+    }
+    if (!args.server) args.kiosk = true;
+    unpackStarterFiles();
   }
 
   const app = createApp(args);
@@ -454,6 +545,6 @@ Optionen:
   });
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isPackaged || (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url))) {
   main();
 }

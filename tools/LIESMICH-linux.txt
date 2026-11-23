@@ -1,0 +1,36 @@
+TV-Simulator 1977 – Version {VERSION}
+======================================
+
+Ein Fernseher von 1977 für die Ausstellung: Röhrenbild, mehrere Sender, die
+gleichzeitig laufen, Umschalten wie am echten Gerät.
+
+SO GEHT ES LOS
+
+1. Diesen Ordner an einen festen Platz legen, z. B. ~/TV-Simulator-1977.
+2. Filme in den Ordner "media" legen. Jeder Unterordner ist ein Sender:
+
+      media/1 Tagesschau/sendung.mp4
+      media/2 Hessentag/film.mp4
+
+3. Starten:   ./start-pi.sh
+   Der Fernseher startet im Vollbild. Dazu wird Chromium oder Google Chrome
+   benutzt (Raspberry Pi OS bringt Chromium mit). Node.js wird nicht gebraucht.
+
+BEDIENEN
+
+   Pfeil hoch/runter, Bild auf/ab, Mausrad      Sender wechseln
+   Ziffern 1–9                                  Sender direkt wählen
+   Leertaste                                    Pause
+   R                                            Film neu starten
+   M                                            Ton aus
+   Strg+Umschalt+Q                              Beenden
+
+Fernbedienung mit allen Einstellungen:   http://localhost:7777/admin
+
+DAUERBETRIEB
+
+   scripts/autostart-pi.sh richtet den Start nach dem Anmelden ein.
+   Das Programm überwacht sich selbst und den Browser.
+
+Ausführliche Anleitung und Quelltext:
+https://github.com/DasButterschnitzel/50JahreTVSimulator

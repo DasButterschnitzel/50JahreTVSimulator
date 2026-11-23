@@ -8,6 +8,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -67,6 +68,31 @@ if (useJava) {
   });
   stopServer = async () => child.kill();
   console.log('Teste den Server der Android-App (Java).');
+} else if (process.env.TV_E2E_PROGRAM) {
+  // Eigenständiges Programm aus tools/build-exe.mjs, z. B. TV_E2E_PROGRAM=dist/.build/tv-simulator
+  const program = path.resolve(process.env.TV_E2E_PROGRAM);
+  const port = await new Promise((resolve) => {
+    const probe = net.createServer().listen(0, '127.0.0.1', () => {
+      const free = probe.address().port;
+      probe.close(() => resolve(free));
+    });
+  });
+  const child = spawn(program, ['--server', '--port', String(port), '--media', media, '--data', path.join(dir, 'data'), '--config', path.join(dir, 'config.json')], {
+    stdio: ['ignore', 'pipe', 'inherit'],
+  });
+  base = await new Promise((resolve, reject) => {
+    child.stdout.on('data', (chunk) => {
+      if (String(chunk).includes('läuft.')) resolve(`http://127.0.0.1:${port}`);
+    });
+    child.on('exit', (code) => reject(new Error(`Programm beendet (${code})`)));
+  });
+  stopServer = () =>
+    new Promise((resolve) => {
+      child.removeAllListeners('exit');
+      child.on('exit', resolve);
+      child.kill();
+    });
+  console.log(`Teste das eigenständige Programm ${path.basename(program)}.`);
 } else {
   const quiet = { info() {}, warn: (m) => console.log('   [server]', m), error: (m) => console.log('   [server]', m) };
   const app = createApp({ config: path.join(dir, 'config.json'), data: path.join(dir, 'data'), media, log: quiet });

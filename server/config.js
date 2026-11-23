@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { readResource } from './resources.js';
 
 export function isPlainObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -89,7 +90,7 @@ export function readLooseJsonFile(file) {
 }
 
 /** Standardwerte; dieselbe Datei benutzt auch die Android-App. */
-export const DEFAULTS = readLooseJsonFile(new URL('./defaults.jsonc', import.meta.url));
+export const DEFAULTS = parseLooseJson(readResource('server/defaults.jsonc').toString('utf8'));
 
 /**
  * Verwaltet config.json (von Hand gepflegt) und data/state.json

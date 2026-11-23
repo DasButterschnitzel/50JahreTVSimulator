@@ -38,7 +38,31 @@ Benötigt werden nur [Node.js](https://nodejs.org) (ab Version 18) und ein Brows
 
 ## Schnellstart
 
-### Windows
+### Windows – fertiges Programm (ohne Installation)
+
+1. `TV-Simulator-1977-…-windows.zip` entpacken, den Ordner an einen festen Platz legen.
+2. Filme in `media` ablegen (siehe unten).
+3. `TV-Simulator.exe` doppelklicken. Der Fernseher erscheint im Vollbild; dafür wird
+   Microsoft Edge oder Google Chrome benutzt (Edge ist auf Windows 10/11 vorhanden).
+4. Für den Start nach dem Einschalten des PCs: einmal `scripts\autostart-windows.bat` ausführen.
+
+Das Programm ist nicht signiert. Beim ersten Start meldet Windows deshalb eventuell „Der
+Computer wurde durch Windows geschützt“ – „Weitere Informationen“ und dann „Trotzdem
+ausführen“ wählen. Neben der Programmdatei liegen nur `config.json`, `media` und (nach dem
+ersten Start) `data`; Anzeige und Server stecken in der Datei selbst. Sie überwacht sich und den
+Browser und startet beides nach einem Absturz neu. `TV-Simulator.exe --server` startet nur den
+Server ohne Browser.
+
+Das ZIP entsteht aus diesem Ordner mit (Node.js 22 oder neuer, Internetzugang):
+
+```bash
+node tools/build-exe.mjs
+```
+
+Mit `linux-x64` oder `linux-arm64` (Raspberry Pi, 64 Bit) als Zusatz entsteht dasselbe für
+Linux; gestartet wird dort wie gewohnt mit `./start-pi.sh`.
+
+### Windows – mit Node.js
 
 1. Node.js (LTS) von <https://nodejs.org> installieren.
 2. Diesen Ordner auf den PC kopieren, Filme in `media` ablegen (siehe unten).
@@ -398,7 +422,12 @@ legt nichts lahm – die Datei wird dann ignoriert und die Fernbedienung zeigt e
 - `android/` – die Android-App: eine WebView mit derselben Anzeige und ein eingebauter Server
   in Java (`…/server/`), der sich nach außen wie `server.js` verhält. Die Anzeige wird beim
   Bauen aus `public/` in die App gepackt, die Standardwerte aus `server/defaults.jsonc`.
+- `tools/build-exe.mjs` – baut das eigenständige Programm: bündelt den Server mit esbuild,
+  packt ihn samt `public/` als „Single Executable Application“ in eine Kopie von Node.js
+  (von nodejs.org, mit Prüfsumme) und schnürt das ZIP. `server/resources.js` liest die
+  mitgelieferten Dateien dann aus der Programmdatei statt von der Platte.
 - Tests: `npm test` (Sendeuhr, Server, Android-Server im Vergleich) und `npm run test:e2e`
   (kompletter Durchlauf im Browser; benötigt ffmpeg und das npm-Paket `playwright`). Mit
   `TV_E2E_SERVER=java npm run test:e2e` läuft derselbe Durchlauf gegen den Server der
-  Android-App. `cd android && ./gradlew lintDebug testDebugUnitTest` prüft die App selbst.
+  Android-App, mit `TV_E2E_PROGRAM=dist/.build/tv-simulator` gegen das eigenständige Programm
+  (vorher `node tools/build-exe.mjs lokal`). `cd android && ./gradlew lintDebug testDebugUnitTest` prüft die App selbst.

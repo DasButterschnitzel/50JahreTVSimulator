@@ -1,0 +1,70 @@
+TV-Simulator 1977 – Version {VERSION}
+======================================
+
+Ein Fernseher von 1977 für die Ausstellung: Röhrenbild, mehrere Sender, die
+gleichzeitig laufen, Umschalten wie am echten Gerät.
+
+
+SO GEHT ES LOS
+
+1. Diesen Ordner an einen festen Platz legen, z. B. auf den Desktop oder nach
+   C:\TV-Simulator-1977. Nicht aus dem ZIP heraus starten – erst entpacken.
+
+2. Filme in den Ordner "media" legen. Jeder Unterordner ist ein Sender:
+
+      media\1 Tagesschau\sendung.mp4
+      media\2 Hessentag\film.mp4
+
+   Am besten MP4 (H.264 mit AAC-Ton). Andere Formate wandelt
+   scripts\video-umwandeln.bat um (braucht ffmpeg).
+
+3. Doppelklick auf TV-Simulator.exe.
+   Der Fernseher startet im Vollbild. Dazu wird Microsoft Edge oder Google
+   Chrome benutzt – Edge ist auf jedem Windows 10/11 schon vorhanden.
+
+   Beim ersten Start meldet Windows eventuell "Der Computer wurde durch
+   Windows geschützt", weil das Programm nicht signiert ist:
+   "Weitere Informationen" anklicken, dann "Trotzdem ausführen".
+
+
+BEDIENEN
+
+   Pfeil hoch/runter, Bild auf/ab, Mausrad      Sender wechseln
+   Ziffern 1–9                                  Sender direkt wählen
+   Leertaste                                    Pause
+   R                                            Film neu starten
+   M                                            Ton aus
+   Strg+Umschalt+Q                              Beenden
+
+Die Fernbedienung mit allen Einstellungen (Bild, Ton, Einbau ins Gehäuse,
+Zeitsteuerung, Internet-Sender) öffnet sich im Browser unter
+
+      http://localhost:7777/admin
+
+Soll sie vom Handy aus erreichbar sein, in config.json bei "server" den
+Eintrag "host" auf "0.0.0.0" setzen und eine "pin" vergeben.
+
+
+DAUERBETRIEB
+
+- scripts\autostart-windows.bat richtet ein, dass der Fernseher nach dem
+  Anmelden von selbst startet.
+- Das Programm überwacht sich selbst und den Browser und startet beides bei
+  einem Absturz neu.
+- In Windows den Energiesparmodus und das Abschalten des Bildschirms
+  ausschalten.
+
+
+WAS LIEGT WO
+
+   TV-Simulator.exe   das Programm (Anzeige und Server in einer Datei)
+   config.json        Grundeinstellungen, mit dem Editor änderbar
+   media\             die Filme
+   data\              entsteht beim ersten Start: gemerkte Einstellungen,
+                      Senderstände und das Browserprofil
+
+Im schwarzen Fenster stehen Meldungen des Programms. Es darf minimiert, aber
+nicht geschlossen werden – Schließen beendet den Fernseher.
+
+Ausführliche Anleitung und Quelltext:
+https://github.com/DasButterschnitzel/50JahreTVSimulator
